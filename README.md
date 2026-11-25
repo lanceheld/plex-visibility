@@ -6,96 +6,181 @@
 [![Security issues](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=software_quality_security_issues)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
 [![Donate with Venmo](https://img.shields.io/badge/Venmo-donate-008CFF?logo=venmo&logoColor=white)](https://venmo.com/u/lanceheld)
 
-Watches your Plex Media Server's **Remote Access** status and alerts you when the server stops being reachable from outside your network, and again when it recovers. It's one Docker container with a web UI for setup, history, and choosing where alerts go.
+**Get a notification when your Plex server stops being reachable from outside your home, and another when it's back.**
 
-> **Why not a Plex plugin?** Plex retired its plugin framework in 2018–2019, and current servers no longer load plugins. The supported approach is a small service that talks to the Plex HTTP API, which is what this is.
+If you share your Plex library with family and friends, or watch it away from home, you've probably had remote access quietly break: a router update undoes your port forward, your internet provider changes your IP address, or UPnP stops working. Usually you only find out when someone tells you Plex isn't working.
 
-## Quick start
+Plex Visibility watches for this and tells you right away. It runs as a single Docker container, and you set everything up in a web page. No config files required.
 
-```sh
-docker compose up -d
-```
+## Contents
 
-This pulls `ghcr.io/lanceheld/plex-visibility:stable`. To build from source instead, run `docker compose up -d --build`.
-
-Open <http://localhost:8080>, go to **Settings**, then:
-
-1. **Sign in with Plex.** This finds your server and stores a token scoped to it. You can also enter an address and token by hand.
-2. **Add a destination.** Search about 180 services (email, ntfy, Pushover, Telegram, Discord, Slack, and others), fill in the URL, and send a test.
-3. **Optional but recommended: add a heartbeat URL.** See [the blind spot](#the-blind-spot-and-the-heartbeat).
-4. **Optional: set a PIN** under **Security**. See below.
-
-### Settings PIN
-
-Like Plex Media Server, Settings can be protected by an optional 6-digit PIN. Without one, anyone who can open the web UI can change settings and download a backup, which includes your Plex token, so set a PIN unless only you can reach the UI. The status page is always viewable without it.
-
-- Set, change or remove the PIN under **Settings → Security**. It's stored as a scrypt hash in `/config/plex-visibility/auth.json`. Each change signs out all other browsers.
-- Repeated wrong PINs are locked out for a while, both from one address and across all addresses.
-- **Forgot it?** Choose **Forgot PIN?** and sign in with the Plex account that owns the monitored server. This removes the PIN, and you can set a new one. Shared users of the server can't do this. Your enabled notification destinations get a message when the PIN is removed this way.
-- **No Plex server set up, or no access to the owner's account?** Stop the container, delete `config/plex-visibility/auth.json`, and start it again. The PIN is removed.
+1. [How it works](#how-it-works)
+2. [What you need](#what-you-need)
+3. [Install](#install)
+4. [Set it up](#set-it-up)
+5. [What the statuses mean](#what-the-statuses-mean)
+6. [When you get alerts](#when-you-get-alerts)
+7. [Covering the blind spot: the heartbeat](#covering-the-blind-spot-the-heartbeat)
+8. [Protecting Settings with a PIN](#protecting-settings-with-a-pin)
+9. [Advanced configuration](#advanced-configuration)
+10. [Updating and choosing a version](#updating-and-choosing-a-version)
+11. [Support the project](#support-the-project)
+12. [For developers](#for-developers)
 
 ## How it works
 
-Plex already tests its own reachability: plex.tv periodically connects back to your public IP and port and records whether it got through. The server shows that result at `GET /myplex/account`, the same data behind _Settings → Remote Access_ ("Fully accessible outside your network"). The monitor reads it on a schedule and classifies the result:
+Plex already checks its own remote access. Every so often, Plex's online service (plex.tv) tries to connect back to your server from the internet and records whether it got through. That's the result you see in Plex under **Settings → Remote Access** ("Fully accessible outside your network").
 
-| State                   | Meaning                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| Reachable               | `mappingState=mapped`                                                              |
-| Not reachable remotely  | Server is up, but plex.tv can't reach it (port forward, UPnP, CGNAT, IP change, …) |
-| Signed out of plex.tv   | Remote access can't work until the server is signed back in                        |
-| Server not responding   | The monitor can't reach the Plex server at all                                     |
-| Can't sign in to server | The stored token was rejected; sign in again                                       |
+Plex Visibility asks your Plex server for that result on a regular schedule. When it changes from good to bad, or bad to good, you get a notification by email, phone push, chat app, or whatever you prefer.
 
-Alerts are debounced. You get **one** alert after N consecutive bad checks, optional "still down" reminders, a new alert if the reason changes, and a **recovery** message with the outage length.
+> **Why isn't this a Plex plugin?** Plex retired plugins in 2018–2019, and current servers no longer load them. A small companion app that talks to your Plex server is the supported way to do this.
 
-### Inside the container
+## What you need
 
-The image is built on the official [apprise-api](https://github.com/caronc/apprise-api) image (`caronc/apprise`), with Node added. Its supervisord runs everything:
+- A computer that runs Docker with Docker Compose. This can be the same machine as Plex, or another one on your network (a NAS, a Raspberry Pi, or a home server). Both regular PCs (x86/amd64) and ARM devices (arm64) are supported.
+- A Plex account that owns the Plex server you want to watch.
+- Somewhere to receive alerts. About 180 services are supported, including email, ntfy, Pushover, Telegram, Discord and Slack.
 
-- **apprise-api** (nginx + gunicorn): delivers notifications. It listens on `127.0.0.1:8000` only, so it isn't exposed.
-- **plex-visibility** (Node/TypeScript): the monitor loop, the API, and the React UI on port `8080`.
+## Install
 
-Destination URLs are stored on the server and only shown masked in the UI. The Plex token is never sent to the browser.
+1. Make a folder for Plex Visibility and download [`docker-compose.yml`](docker-compose.yml) into it.
+2. In the file, set `TZ` to your time zone (for example `America/New_York`). If you're on Linux, set `PUID` and `PGID` to your own user and group IDs (run `id` to find them) so you own the files it saves.
+3. From that folder, run:
 
-### The blind spot, and the heartbeat
+   ```sh
+   docker compose up -d
+   ```
 
-If the power, the host, or your internet connection goes down, the monitor can't send anything, and that's often exactly when remote access breaks. To cover it, create a free [healthchecks.io](https://healthchecks.io) check (or an Uptime Kuma push monitor) and paste its URL under **Settings → Heartbeat**. The monitor pings it after every check, and healthchecks.io alerts you if the pings stop.
+4. Open <http://localhost:8080> in a browser. If Plex Visibility is on another machine, use that machine's address instead of `localhost`, for example `http://192.168.1.20:8080`.
 
-## Images
+Your settings and history are saved in a `config` folder next to `docker-compose.yml`, so they survive restarts and updates.
 
-Images are published to `ghcr.io/lanceheld/plex-visibility` for `linux/amd64` and `linux/arm64`:
+## Set it up
 
-| Tag                | Built from                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `stable`           | The latest published GitHub release                                                                     |
-| `1.2.3`            | Release `v1.2.3`                                                                                        |
-| `latest`           | The latest commit on `main` (snapshot)                                                                  |
-| `1.2.3-4-gabc1234` | A specific snapshot: 4 commits after `v1.2.3`, at commit `abc1234` (`0.0.0-…` before the first release) |
+In the web page, open **Settings** and work through these steps:
 
-Use `stable` unless you want unreleased changes.
+1. **Sign in with Plex.** This finds your server and connects to it. Choose the address on your home network (these are listed first). If you'd rather, you can type in the server address and a Plex token yourself.
+2. **Add a destination**, which is where alerts are sent. Search for your service (for example "Pushover" or "email"), fill in the details, and send a test to make sure it arrives. You can add more than one.
+3. **Add a heartbeat (recommended).** This catches the one situation Plex Visibility can't report on its own. See [the heartbeat](#covering-the-blind-spot-the-heartbeat).
+4. **Set a PIN (recommended).** This stops other people on your network from changing your settings. See [Protecting Settings with a PIN](#protecting-settings-with-a-pin).
 
-Releases (`stable` and version tags) are also published to Docker Hub. Snapshots are on GHCR only.
+That's it. The main page shows your server's current status and a history of past problems.
 
-## Configuration
+## What the statuses mean
 
-Everything is set in the UI and saved to `/config/plex-visibility/settings.json` (the `./config` volume). Environment variables:
+| Status                  | What it means and what to check                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reachable               | Everything's fine. Plex can be reached from the internet.                                                                                                                     |
+| Not reachable remotely  | Your Plex server is running, but plex.tv can't reach it from outside. Common causes: a lost port forward, UPnP failing, a new public IP address, or CGNAT from your provider. |
+| Signed out of plex.tv   | Your Plex server has been signed out of your Plex account. Remote access can't work until you sign it back in from Plex's settings.                                           |
+| Server not responding   | Plex Visibility can't reach your Plex server at all. Plex may be stopped, or its address may have changed.                                                                    |
+| Can't sign in to server | Your Plex server rejected the saved sign-in. Go to **Settings** and sign in with Plex again.                                                                                  |
 
-| Variable                                                 | Default   |                                                                                                                          |
-| -------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                                                   | `8080`    | Web UI port inside the container                                                                                         |
-| `PUID` / `PGID`                                          | `1000`    | User the processes run as, so `./config` is owned by you                                                                 |
-| `TZ`                                                     | `Etc/UTC` | Time zone for logs                                                                                                       |
-| `PLEX_URL`, `PLEX_TOKEN`, `NOTIFY_URLS`, `HEARTBEAT_URL` |           | Optional: pre-fill settings on **first** start only, for headless setups. `NOTIFY_URLS` is space-separated Apprise URLs. |
+## When you get alerts
 
-**Networking:** the monitor needs to reach Plex at the address you pick, usually its LAN address (the sign-in flow lists local addresses first). If Plex runs on the same host with host networking, you can instead use `network_mode: host` and `http://localhost:32400`.
+Plex Visibility is designed not to spam you over a momentary glitch:
 
-## Support
+- You get **one** alert after several checks in a row have failed, not on the first failure.
+- If you turn them on, you get **"still down" reminders** while the problem lasts.
+- If the reason changes (for example from "not reachable remotely" to "server not responding"), you get a new alert.
+- When things are fixed, you get a **recovery** message that says how long the outage lasted.
+
+## Covering the blind spot: the heartbeat
+
+There's one problem Plex Visibility can't warn you about by itself: if the power, the machine it runs on, or your whole internet connection goes down, it has no way to send a message. That's often exactly when remote access breaks.
+
+A heartbeat covers this. You set up a free check with an outside service that expects to hear from Plex Visibility regularly and alerts _you_ if it goes quiet.
+
+1. Create a free account at [healthchecks.io](https://healthchecks.io) and add a check. (An Uptime Kuma "push" monitor works too.)
+2. Copy the check's ping URL.
+3. Paste it into **Settings → Heartbeat** in Plex Visibility.
+
+Plex Visibility pings that URL after every check. If the pings stop, healthchecks.io notifies you.
+
+## Protecting Settings with a PIN
+
+Without a PIN, anyone on your network who can open the Plex Visibility page can change its settings or download a backup, and the backup includes your Plex sign-in token. Set a PIN unless you're the only one who can reach the page. The status page stays viewable without the PIN.
+
+- **Set, change or remove the PIN** under **Settings → Security**. It's a 6-digit code, like the one Plex itself uses. Changing it signs out every other browser.
+- **Too many wrong guesses** lock out further attempts for a while.
+- **Forgot your PIN?** Choose **Forgot PIN?** and sign in with the Plex account that owns the server. This removes the PIN so you can set a new one. People you share your server with can't do this. As a safety measure, your alert destinations get a message whenever the PIN is removed this way.
+- **Can't use the Plex sign-in** (for example, you haven't connected a server yet)? Stop the container, delete the file `config/plex-visibility/auth.json`, and start it again. The PIN is removed. (The PIN itself is stored as a secure hash, never as the plain number.)
+
+## Advanced configuration
+
+Most people won't need anything in this section.
+
+### Settings in `docker-compose.yml`
+
+| Setting         | Default   | What it does                                                                           |
+| --------------- | --------- | -------------------------------------------------------------------------------------- |
+| `TZ`            | `Etc/UTC` | Your time zone, used for times in the logs.                                            |
+| `PUID` / `PGID` | `1000`    | The user and group Plex Visibility runs as, so the files in `config` are owned by you. |
+| `PORT`          | `8080`    | The port the web page uses inside the container.                                       |
+
+To open the web page on a different port, change the left-hand number under `ports` (for example `'9090:8080'`).
+
+### Setting up without the web page
+
+If you manage your setup entirely through files, you can pre-fill the settings with these. They're only read the **first** time the container starts. After that, use the web page.
+
+| Setting         | What it does                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| `PLEX_URL`      | Your Plex server's address, for example `http://192.168.1.10:32400`.                               |
+| `PLEX_TOKEN`    | A Plex token for that server.                                                                      |
+| `NOTIFY_URLS`   | Alert destinations as [Apprise URLs](https://github.com/caronc/apprise/wiki), separated by spaces. |
+| `HEARTBEAT_URL` | Your heartbeat ping URL.                                                                           |
+
+All settings you make in the web page are saved to `config/plex-visibility/settings.json`.
+
+### Networking
+
+Plex Visibility needs to reach your Plex server at the address you choose, usually its address on your home network. If Plex runs on the same machine and uses host networking, you can instead add `network_mode: host` to `docker-compose.yml` and use `http://localhost:32400` as the Plex address.
+
+### Privacy and what's inside the container
+
+Your Plex token never leaves the server side of Plex Visibility; it's never sent to your browser. Alert destination details are shown masked in the web page.
+
+The container runs two things:
+
+- **Plex Visibility** itself: the monitor and the web page, on port 8080.
+- **[Apprise](https://github.com/caronc/apprise-api)**: the open-source tool that sends notifications to all those services. It's only reachable from inside the container.
+
+## Updating and choosing a version
+
+To update to the newest release, from the folder with `docker-compose.yml` run:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+Images are published to `ghcr.io/lanceheld/plex-visibility`. Releases are also published to Docker Hub. You choose which version you get with the tag at the end of the `image:` line in `docker-compose.yml`:
+
+| Tag                | What you get                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `stable`           | The latest official release. **Use this unless you have a reason not to.**                                      |
+| `1.2.3`            | A specific release, which never changes. Useful if you want to update only when you choose.                     |
+| `latest`           | The newest, unreleased development version. May contain bugs. (GitHub only.)                                    |
+| `1.2.3-4-gabc1234` | One specific development version, here 4 changes after release 1.2.3. Mostly useful for testing. (GitHub only.) |
+
+## Support the project
 
 If Plex Visibility is useful to you, you can support its development with a donation through [Venmo](https://venmo.com/u/lanceheld). Thank you!
 
-## Development
+## For developers
 
-Requires Node 22+. Or open the repository in its dev container (VS Code: **Dev Containers: Reopen in Container**), which has Node, Docker, Claude Code and the GitHub CLI, and runs `npm ci` on creation. Run `claude` and `gh auth login` once inside to sign in; both logins are kept across rebuilds.
+This section is for people who want to change the code.
+
+### Build from source
+
+```sh
+docker compose up -d --build
+```
+
+### Local development
+
+Requires Node 22 or newer. Alternatively, open the repository in its dev container (VS Code: **Dev Containers: Reopen in Container**), which includes Node, Docker, Claude Code and the GitHub CLI, and runs `npm ci` when created. Run `claude` and `gh auth login` once inside to sign in; both logins are kept across rebuilds.
 
 ```sh
 npm install
@@ -111,8 +196,10 @@ To run locally against a real apprise-api, start one with `docker run -p 127.0.0
 DATA_DIR=./config/plex-visibility npm run dev   # API on :8080, UI with hot reload on :5173
 ```
 
-Layout:
+### How it fits together
 
-- `server/src`: Hono API, monitor loop (`service.ts`), alert state machine (`monitor.ts`), Plex status (`plex.ts`) and sign-in (`plexAuth.ts`), apprise client (`notify.ts`)
+The monitor reads the `mappingState` field from the Plex server's `GET /myplex/account` endpoint (`mapped` means reachable). The Docker image is built on the official `caronc/apprise` image with Node added, and its supervisord runs both apprise-api (nginx + gunicorn, bound to `127.0.0.1:8000`) and the Node app.
+
+- `server/src`: Hono API, monitor loop (`service.ts`), alert state machine (`monitor.ts`), Plex status (`plex.ts`) and sign-in (`plexAuth.ts`), Apprise client (`notify.ts`)
 - `web/src`: React + Tailwind UI
 - `Dockerfile`: builds both, then layers Node and the app onto `caronc/apprise`
