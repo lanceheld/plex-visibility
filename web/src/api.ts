@@ -14,7 +14,13 @@ import type {
 export type * from '../../server/src/types.ts';
 
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
+  // Only ever call this app's own API. Resolved against the page's origin, not document.baseURI,
+  // so neither a <base> tag nor a bad path can send the request (and its session cookie) elsewhere.
+  const target = new URL(url, location.origin);
+  if (target.origin !== location.origin || !target.pathname.startsWith('/api/')) {
+    throw new Error(`Refusing to request ${url}`);
+  }
+  const res = await fetch(target, {
     method,
     headers: { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
