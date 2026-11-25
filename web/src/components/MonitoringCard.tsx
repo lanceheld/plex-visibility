@@ -10,10 +10,10 @@ const REMINDERS = [0, 3600, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600];
 export function MonitoringCard({
   settings,
   onSaved,
-}: {
+}: Readonly<{
   settings: PublicSettings;
   onSaved: (s: PublicSettings) => void;
-}) {
+}>) {
   const { busy, run } = useAction();
   const [m, setM] = useState(settings.monitor);
   const dirty = JSON.stringify(m) !== JSON.stringify(settings.monitor);
@@ -75,10 +75,10 @@ export function MonitoringCard({
 export function HeartbeatCard({
   settings,
   onSaved,
-}: {
+}: Readonly<{
   settings: PublicSettings;
   onSaved: (s: PublicSettings) => void;
-}) {
+}>) {
   const { busy, run } = useAction();
   const [url, setUrl] = useState(settings.heartbeatUrl);
 

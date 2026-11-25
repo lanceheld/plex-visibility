@@ -86,12 +86,12 @@ describe('History', () => {
     }
     expect(h.data.segments.map((s) => s.state)).toEqual(['ok', 'unreachable']);
     // 31 min up (0→31), 9 min down (31→40)
-    expect(h.uptime(86400_000, at(40))).toBeCloseTo(31 / 40);
+    expect(h.uptime(86_400_000, at(40))).toBeCloseTo(31 / 40);
   });
 
   it('starts a new segment after a gap and has no uptime without data', () => {
     const h = new History();
-    expect(h.uptime(86400_000, at(0))).toBeNull();
+    expect(h.uptime(86_400_000, at(0))).toBeNull();
     h.record(status('ok', 0));
     h.record(status('ok', 60));
     expect(h.data.segments).toHaveLength(2);

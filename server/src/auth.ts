@@ -17,9 +17,9 @@ import { readJson, writeJson } from './store.ts';
 const scrypt = promisify(scryptCb) as (pin: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 
 export const PIN_LENGTH = 6;
-export const PIN_PATTERN = new RegExp(`^\\d{${PIN_LENGTH}}$`);
+export const PIN_PATTERN = new RegExp(String.raw`^\d{${PIN_LENGTH}}$`);
 export const SESSION_COOKIE = 'pv_session';
-export const SESSION_TTL_MS = 30 * 86400_000;
+export const SESSION_TTL_MS = 30 * 86_400_000;
 
 interface AuthData {
   pin: { salt: string; hash: string } | null; // base64
@@ -33,7 +33,7 @@ async function hashPin(pin: string, salt: Buffer): Promise<Buffer> {
 
 export class AuthStore {
   private data!: AuthData;
-  private file?: string;
+  private readonly file?: string;
 
   constructor(file?: string) {
     this.file = file;
@@ -113,8 +113,8 @@ export function sessionValid(value: string | false | undefined, version: number,
  * 15 minutes.
  */
 export class LoginLimiter {
-  private failures = new Map<string, { count: number; lockedUntil: number }>();
-  private threshold: number;
+  private readonly failures = new Map<string, { count: number; lockedUntil: number }>();
+  private readonly threshold: number;
 
   constructor(threshold = 5) {
     this.threshold = threshold;

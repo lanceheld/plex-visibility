@@ -9,10 +9,10 @@ const POPULAR = ['E-Mail', 'ntfy', 'Pushover', 'Telegram', 'Discord', 'Slack', '
 export function NotificationsCard({
   settings,
   onSaved,
-}: {
+}: Readonly<{
   settings: PublicSettings;
   onSaved: (s: PublicSettings) => void;
-}) {
+}>) {
   const { busy, run } = useAction();
   const [adding, setAdding] = useState(false);
   const [results, setResults] = useState<Record<string, { ok: boolean; error?: string }>>({});
@@ -120,11 +120,11 @@ function AddDestination({
   open,
   onClose,
   onAdded,
-}: {
+}: Readonly<{
   open: boolean;
   onClose: () => void;
   onAdded: (s: PublicSettings) => void;
-}) {
+}>) {
   const { busy, run } = useAction();
   const [services, setServices] = useState<ServiceInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

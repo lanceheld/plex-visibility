@@ -45,7 +45,7 @@ export interface AppDeps {
  * write-only from the browser, so the full URL never needs to go back to it.
  */
 export function maskUrl(url: string): string {
-  const m = url.match(/^([a-z][a-z0-9+.-]*:\/\/)([^?#]*)/i);
+  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^?#]*)/i.exec(url);
   if (!m) {
     return '••••';
   }
@@ -197,7 +197,7 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ pinSet: true, authenticated: true } satisfies AuthState);
   });
 
-  app.post('/api/auth/logout', async (c) => {
+  app.post('/api/auth/logout', (c) => {
     endSession(c);
     return c.json({ pinSet: auth.pinSet, authenticated: !auth.pinSet } satisfies AuthState);
   });
@@ -354,7 +354,7 @@ export function createApp(deps: AppDeps): Hono {
     const pinId = Number(c.req.param('id'));
     const { serverId, uri, name } = await body(
       c,
-      z.object({ serverId: z.string(), uri: z.string().url(), name: z.string().default('') }),
+      z.object({ serverId: z.string(), uri: z.url(), name: z.string().default('') }),
     );
     const token = plexAuth.serverToken(pinId, serverId);
     if (!token) {

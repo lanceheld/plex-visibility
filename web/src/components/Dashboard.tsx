@@ -18,21 +18,27 @@ export function Dashboard({
   onCheck,
   checking,
   goToSettings,
-}: {
+}: Readonly<{
   status: StatusResponse;
   onCheck: () => void;
   checking: boolean;
   goToSettings: () => void;
-}) {
+}>) {
   const now = useNow();
   const current = status.current;
   const meta = STATE_META[current?.state ?? 'unconfigured'];
   const tone = TONE[meta.tone];
   const Icon = meta.icon;
   const enabledTargets = status.enabledTargets;
-  const endpoint = current?.publicAddress
-    ? `${current.publicAddress}${current.publicPort ? `:${current.publicPort}` : ''}`
-    : null;
+  let endpoint: string | null = null;
+  if (current?.publicAddress) {
+    endpoint = current.publicPort ? `${current.publicAddress}:${current.publicPort}` : current.publicAddress;
+  }
+  let nextCheck = '—';
+  if (status.nextCheckAt) {
+    const wait = Date.parse(status.nextCheckAt) - now;
+    nextCheck = wait <= 0 ? 'now' : `in ${duration(wait)}`;
+  }
 
   return (
     <div className="space-y-6">
@@ -116,16 +122,7 @@ export function Dashboard({
         <Stat label="Uptime · 24h" value={percent(status.uptime.day)} />
         <Stat label="Uptime · 7 days" value={percent(status.uptime.week)} />
         <Stat label="Alert destinations" value={String(enabledTargets)} />
-        <Stat
-          label="Next check"
-          value={
-            status.nextCheckAt
-              ? Date.parse(status.nextCheckAt) <= now
-                ? 'now'
-                : `in ${duration(Date.parse(status.nextCheckAt) - now)}`
-              : '—'
-          }
-        />
+        <Stat label="Next check" value={nextCheck} />
       </div>
 
       <Timeline segments={status.segments} now={now} />
@@ -134,7 +131,7 @@ export function Dashboard({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 dark:border-slate-800 dark:bg-slate-900/60">
       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</p>
@@ -143,9 +140,9 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-const WINDOWS = { '24h': 86400_000, '7d': 7 * 86400_000 } as const;
+const WINDOWS = { '24h': 86_400_000, '7d': 7 * 86_400_000 } as const;
 
-function Timeline({ segments, now }: { segments: Segment[]; now: number }) {
+function Timeline({ segments, now }: Readonly<{ segments: Segment[]; now: number }>) {
   const [win, setWin] = useState<keyof typeof WINDOWS>('24h');
   const span = WINDOWS[win];
   const from = now - span;
@@ -206,7 +203,7 @@ function Timeline({ segments, now }: { segments: Segment[]; now: number }) {
   );
 }
 
-function AlertLog({ alerts }: { alerts: AlertLogEntry[] }) {
+function AlertLog({ alerts }: Readonly<{ alerts: AlertLogEntry[] }>) {
   return (
     <Card title="Alerts sent" description="The notifications this monitor has sent, newest first.">
       {alerts.length === 0 ? (

@@ -1,5 +1,5 @@
 import { Activity, Heart, LockKeyhole, LogOut, Settings as SettingsIcon, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { api, type AuthState, LOGGED_OUT_EVENT, type PublicSettings, type StatusResponse } from './api.ts';
 import { LoginCard, SecurityCard } from './components/Auth.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
@@ -79,12 +79,50 @@ export function App() {
   const state = status?.current?.state ?? 'unconfigured';
   const tone = TONE[STATE_META[state].tone];
 
+  let content: ReactNode;
+  if (page === 'settings' && auth && !auth.authenticated) {
+    content = <LoginCard onLoggedIn={setAuth} />;
+  } else if (!status || !auth || (page === 'settings' && !settings)) {
+    content = (
+      <div className="space-y-4">
+        <div className="h-44 animate-pulse rounded-3xl bg-slate-200 dark:bg-slate-800" />
+        <div className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
+      </div>
+    );
+  } else if (page === 'dashboard' || !settings) {
+    content = (
+      <Dashboard
+        status={status}
+        checking={busy === 'check'}
+        onCheck={async () => {
+          const s = await run('check', api.checkNow);
+          if (s) {
+            setStatus(s);
+          }
+        }}
+        goToSettings={() => go('settings')}
+      />
+    );
+  } else {
+    content = (
+      <div className="space-y-6">
+        <PlexCard settings={settings} onSaved={onSaved} />
+        <NotificationsCard settings={settings} onSaved={onSaved} />
+        <MonitoringCard key={JSON.stringify(settings.monitor)} settings={settings} onSaved={onSaved} />
+        <HeartbeatCard key={settings.heartbeatUrl} settings={settings} onSaved={onSaved} />
+        <AppearanceCard />
+        <BackupCard onImported={onSaved} />
+        <SecurityCard auth={auth} onChanged={setAuth} onLogout={logout} />
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
       <header className="flex items-center justify-between py-5">
         <a href="#/" className="flex items-center gap-2.5 font-semibold tracking-tight">
           <img src="/favicon.svg" alt="" className="size-8" />
-          Plex Visibility
+          <span>Plex Visibility</span>
         </a>
         <nav className="flex items-center gap-1 rounded-xl bg-slate-200/60 p-1 dark:bg-slate-800/60">
           <NavButton active={page === 'dashboard'} onClick={() => go('dashboard')}>
@@ -121,36 +159,7 @@ export function App() {
         </div>
       )}
 
-      {page === 'settings' && auth && !auth.authenticated ? (
-        <LoginCard onLoggedIn={setAuth} />
-      ) : !status || !auth || (page === 'settings' && !settings) ? (
-        <div className="space-y-4">
-          <div className="h-44 animate-pulse rounded-3xl bg-slate-200 dark:bg-slate-800" />
-          <div className="h-24 animate-pulse rounded-2xl bg-slate-200 dark:bg-slate-800" />
-        </div>
-      ) : page === 'dashboard' || !settings ? (
-        <Dashboard
-          status={status}
-          checking={busy === 'check'}
-          onCheck={async () => {
-            const s = await run('check', api.checkNow);
-            if (s) {
-              setStatus(s);
-            }
-          }}
-          goToSettings={() => go('settings')}
-        />
-      ) : (
-        <div className="space-y-6">
-          <PlexCard settings={settings} onSaved={onSaved} />
-          <NotificationsCard settings={settings} onSaved={onSaved} />
-          <MonitoringCard key={JSON.stringify(settings.monitor)} settings={settings} onSaved={onSaved} />
-          <HeartbeatCard key={settings.heartbeatUrl} settings={settings} onSaved={onSaved} />
-          <AppearanceCard />
-          <BackupCard onImported={onSaved} />
-          <SecurityCard auth={auth} onChanged={setAuth} onLogout={logout} />
-        </div>
-      )}
+      {content}
 
       {status && <Footer version={status.version} />}
     </div>
@@ -161,9 +170,17 @@ const REPO = 'https://github.com/lanceheld/plex-visibility';
 const DONATE_URL = 'https://venmo.com/u/lanceheld';
 
 /** Version, linked to its commit (snapshots, e.g. 1.2.3-4-gabc1234) or the releases page. */
-function Footer({ version }: { version: string }) {
+function Footer({ version }: Readonly<{ version: string }>) {
   const commit = /-g([0-9a-f]{7,40})(?:-dirty)?$/.exec(version)?.[1];
-  const href = commit ? `${REPO}/commit/${commit}` : version === 'dev' ? REPO : `${REPO}/releases`;
+  let href = `${REPO}/releases`;
+  let title = 'Release';
+  if (commit) {
+    href = `${REPO}/commit/${commit}`;
+    title = 'Snapshot build';
+  } else if (version === 'dev') {
+    href = REPO;
+    title = 'Development build';
+  }
   return (
     <footer className="mt-10 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
       <span>Plex Visibility</span>
@@ -171,7 +188,7 @@ function Footer({ version }: { version: string }) {
         href={href}
         target="_blank"
         rel="noreferrer"
-        title={commit ? 'Snapshot build' : version === 'dev' ? 'Development build' : 'Release'}
+        title={title}
         className="rounded-md bg-slate-200/70 px-1.5 py-0.5 font-mono hover:text-slate-900 dark:bg-slate-800/70 dark:hover:text-slate-100"
       >
         {version}
@@ -189,7 +206,11 @@ function Footer({ version }: { version: string }) {
   );
 }
 
-function NavButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function NavButton({
+  active,
+  onClick,
+  children,
+}: Readonly<{ active: boolean; onClick: () => void; children: ReactNode }>) {
   return (
     <button
       type="button"

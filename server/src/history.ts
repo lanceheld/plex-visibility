@@ -5,7 +5,7 @@
 import { readJson, writeJson } from './store.ts';
 import type { AlertLogEntry, RemoteStatus, Segment } from './types.ts';
 
-const KEEP_MS = 30 * 86400_000;
+const KEEP_MS = 30 * 86_400_000;
 const MAX_ALERTS = 200;
 // A gap longer than this between checks (e.g. the container was stopped) starts a new segment.
 const GAP_MS = 10 * 60_000;
@@ -18,7 +18,7 @@ export interface HistoryData {
 export class History {
   data: HistoryData = { segments: [], alerts: [] };
 
-  private file?: string;
+  private readonly file?: string;
 
   constructor(file?: string) {
     this.file = file;
@@ -45,7 +45,7 @@ export class History {
     const at = status.checkedAt;
     const last = this.data.segments.at(-1);
     const gap = last ? Date.parse(at) - Date.parse(last.end) : Infinity;
-    if (last && last.state === status.state && gap <= GAP_MS) {
+    if (last?.state === status.state && gap <= GAP_MS) {
       last.end = at;
       last.detail = status.detail;
     } else {
@@ -89,7 +89,10 @@ export class History {
       }
     });
     if (total === 0) {
-      return segs.length ? (segs.every((s) => s.state === 'ok') ? 1 : 0) : null;
+      if (segs.length === 0) {
+        return null;
+      }
+      return segs.every((s) => s.state === 'ok') ? 1 : 0;
     }
     return up / total;
   }

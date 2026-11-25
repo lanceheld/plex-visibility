@@ -7,7 +7,14 @@ import type { SettingsStore } from './settings.ts';
 import { APP_VERSION } from './version.ts';
 import type { RemoteStatus, Settings, StatusResponse } from './types.ts';
 
-const DAY = 86400_000;
+const DAY = 86_400_000;
+
+/**
+ * Log messages include text from Plex and notification services. Replace
+ * control characters (line breaks above all) so that text can't start a
+ * line of its own and pass as a separate log entry.
+ */
+export const oneLine = (msg: string): string => msg.replaceAll(/\p{Cc}+/gu, ' ');
 
 export interface ServiceDeps {
   settings: SettingsStore;
@@ -18,21 +25,22 @@ export interface ServiceDeps {
 }
 
 export class MonitorService {
-  private monitor: Monitor;
+  private readonly monitor: Monitor;
   private current: RemoteStatus | null = null;
   private timer: NodeJS.Timeout | null = null;
   private nextCheckAt: Date | null = null;
   private running: Promise<RemoteStatus> | null = null;
   private appriseReady = false;
   private started = false;
-  private log: (msg: string) => void;
+  private readonly log: (msg: string) => void;
 
-  private deps: ServiceDeps;
+  private readonly deps: ServiceDeps;
 
   constructor(deps: ServiceDeps) {
     this.deps = deps;
     this.monitor = new Monitor(monitorOptions(deps.settings.get()));
-    this.log = deps.log ?? ((m) => console.log(`${new Date().toISOString()} ${m}`));
+    const write = deps.log ?? ((m: string) => console.log(`${new Date().toISOString()} ${m}`));
+    this.log = (m) => write(oneLine(m));
     deps.settings.onChange((s) => {
       this.monitor.options = monitorOptions(s);
       // Re-check promptly so changes (like a new server) show up right away.

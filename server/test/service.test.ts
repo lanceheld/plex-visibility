@@ -116,6 +116,14 @@ describe('MonitorService', () => {
     expect(t.logs.some((l) => l.includes('No valid URLs: bad url'))).toBe(true);
   });
 
+  it('keeps text from Plex on one log line', async () => {
+    const t = await setup();
+    t.state.mapping = 'failed\n2026-01-01T00:00:00.000Z Status: ok';
+    await t.service.checkNow();
+    expect(t.logs).toEqual([expect.stringContaining('mappingState=failed 2026-01-01t00:00:00.000z status: ok')]);
+    expect(t.logs.some((l) => /[\r\n]/.test(l))).toBe(false);
+  });
+
   it('shares one run between concurrent checks', async () => {
     const t = await setup();
     const [a, b] = [t.service.checkNow(), t.service.checkNow()];

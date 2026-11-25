@@ -21,13 +21,13 @@ export function Card({
   actions,
   children,
   className,
-}: {
+}: Readonly<{
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
-}) {
+}>) {
   return (
     <section
       className={cx(
@@ -66,11 +66,13 @@ export function Button({
   children,
   disabled,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: Variant;
-  busy?: boolean;
-  size?: 'sm' | 'md';
-}) {
+}: Readonly<
+  ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant?: Variant;
+    busy?: boolean;
+    size?: 'sm' | 'md';
+  }
+>) {
   return (
     <button
       type="button"
@@ -92,15 +94,15 @@ export function Button({
 const fieldClass =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-xs placeholder:text-slate-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/30 focus:outline-none dark:border-slate-700 dark:bg-slate-950';
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input(props: Readonly<InputHTMLAttributes<HTMLInputElement>>) {
   return <input {...props} className={cx(fieldClass, props.className)} />;
 }
 
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
+export function Select(props: Readonly<SelectHTMLAttributes<HTMLSelectElement>>) {
   return <select {...props} className={cx(fieldClass, 'pr-8', props.className)} />;
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+export function Field({ label, hint, children }: Readonly<{ label: string; hint?: ReactNode; children: ReactNode }>) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-sm font-medium">{label}</span>
@@ -114,11 +116,11 @@ export function Toggle({
   checked,
   onChange,
   label,
-}: {
+}: Readonly<{
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
-}) {
+}>) {
   return (
     <button
       type="button"
@@ -141,7 +143,10 @@ export function Toggle({
   );
 }
 
-export function Badge({ tone = 'idle', children }: { tone?: 'ok' | 'bad' | 'warn' | 'idle'; children: ReactNode }) {
+export function Badge({
+  tone = 'idle',
+  children,
+}: Readonly<{ tone?: 'ok' | 'bad' | 'warn' | 'idle'; children: ReactNode }>) {
   const tones = {
     ok: 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:text-emerald-300',
     bad: 'bg-rose-500/10 text-rose-700 ring-rose-500/30 dark:text-rose-300',
@@ -166,13 +171,13 @@ export function Modal({
   title,
   children,
   wide,
-}: {
+}: Readonly<{
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   wide?: boolean;
-}) {
+}>) {
   useEffect(() => {
     if (!open) {
       return;
@@ -185,17 +190,22 @@ export function Modal({
     return null;
   }
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/50 p-4 backdrop-blur-sm sm:items-center"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
+    <div className="fixed inset-0 z-40 flex items-end justify-center p-4 sm:items-center">
+      {/* Clicking outside the dialog closes it; Escape does too (above), so this needn't be tabbable. */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Close dialog"
+        className="absolute inset-0 cursor-default bg-slate-950/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Opened with the `open` attribute, not showModal(): the top layer would cover the toasts and make them inert. */}
+      <dialog
+        open
         aria-modal="true"
         aria-label={title}
-        onClick={(e) => e.stopPropagation()}
         className={cx(
-          'flex max-h-[90vh] w-full flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900',
+          'relative flex max-h-[90vh] w-full flex-col rounded-2xl border border-slate-200 bg-white text-inherit shadow-2xl dark:border-slate-800 dark:bg-slate-900',
           wide ? 'max-w-2xl' : 'max-w-lg',
         )}
       >
@@ -206,7 +216,7 @@ export function Modal({
           </Button>
         </header>
         <div className="overflow-y-auto p-5">{children}</div>
-      </div>
+      </dialog>
     </div>
   );
 }
@@ -219,7 +229,7 @@ interface Toast {
 }
 const ToastContext = createContext<(tone: Toast['tone'], message: string) => void>(() => {});
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const push = useCallback((tone: Toast['tone'], message: string) => {
     const id = Date.now() + Math.random();

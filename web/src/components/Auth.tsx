@@ -1,5 +1,5 @@
 import { ArrowLeft, KeyRound, LockKeyhole, LockKeyholeOpen, LogIn, LogOut } from 'lucide-react';
-import { type FormEvent, type InputHTMLAttributes, useEffect, useRef, useState } from 'react';
+import { type SubmitEvent, type InputHTMLAttributes, useEffect, useRef, useState } from 'react';
 import { api, type AuthState } from '../api.ts';
 import { Button, Card, Field, Input, cx, useAction, useToast } from './ui.tsx';
 
@@ -12,17 +12,19 @@ function PinInput({
   onChange,
   className,
   ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
-  value: string;
-  onChange: (pin: string) => void;
-}) {
+}: Readonly<
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+    value: string;
+    onChange: (pin: string) => void;
+  }
+>) {
   return (
     <Input
       type="password"
       inputMode="numeric"
       autoComplete="off"
       maxLength={PIN_LENGTH}
-      pattern={`\\d{${PIN_LENGTH}}`}
+      pattern={String.raw`\d{${PIN_LENGTH}}`}
       placeholder={'•'.repeat(PIN_LENGTH)}
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
@@ -32,7 +34,7 @@ function PinInput({
   );
 }
 
-export function LoginCard({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }) {
+export function LoginCard({ onLoggedIn }: Readonly<{ onLoggedIn: (a: AuthState) => void }>) {
   const { busy, run } = useAction();
   const [pin, setPin] = useState('');
   const [recovering, setRecovering] = useState(false);
@@ -50,7 +52,7 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }
     }
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (complete(pin)) {
       void login(pin);
@@ -110,7 +112,7 @@ function ResetByFileHint() {
 }
 
 /** Remove a forgotten PIN by signing in with Plex as the owner of the monitored server. */
-function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => void; onCancel: () => void }) {
+function RecoverCard({ onLoggedIn, onCancel }: Readonly<{ onLoggedIn: (a: AuthState) => void; onCancel: () => void }>) {
   const toast = useToast();
   const { busy, run } = useAction();
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -237,7 +239,7 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
 }
 
 /** Set a PIN, or change or remove the current one. */
-function PinForm({ pinSet, onChanged }: { pinSet: boolean; onChanged: (a: AuthState) => void }) {
+function PinForm({ pinSet, onChanged }: Readonly<{ pinSet: boolean; onChanged: (a: AuthState) => void }>) {
   const { busy, run } = useAction();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -256,7 +258,7 @@ function PinForm({ pinSet, onChanged }: { pinSet: boolean; onChanged: (a: AuthSt
     }
   };
 
-  const submit = (e: FormEvent) => {
+  const submit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (canSet) {
       void save('set', next, pinSet ? 'PIN changed' : 'PIN set');
@@ -301,11 +303,11 @@ export function SecurityCard({
   auth,
   onChanged,
   onLogout,
-}: {
+}: Readonly<{
   auth: AuthState;
   onChanged: (a: AuthState) => void;
   onLogout: () => void;
-}) {
+}>) {
   return (
     <Card
       title="Security"

@@ -10,6 +10,7 @@
  *   publicAddress/Port   what plex.tv tested
  */
 import type { RemoteStatus } from './types.ts';
+import { stripTrailingSlashes } from './url.ts';
 import { APP_VERSION } from './version.ts';
 
 export const PLEX_HEADERS = {
@@ -20,7 +21,9 @@ export const PLEX_HEADERS = {
 
 type Account = Record<string, unknown>;
 
-const str = (v: unknown): string | undefined => (v === undefined || v === null || v === '' ? undefined : String(v));
+/** A non-empty string, number or boolean as a string; anything else (objects included) as undefined. */
+const str = (v: unknown): string | undefined =>
+  (typeof v === 'string' && v !== '') || typeof v === 'number' || typeof v === 'boolean' ? String(v) : undefined;
 
 export function parseAccount(account: Account, checkedAt = new Date()): RemoteStatus {
   const signIn = str(account.signInState)?.toLowerCase();
@@ -58,12 +61,12 @@ function decode(body: string, contentType: string): Account {
     }
     return data;
   }
-  const tag = body.match(/<MyPlex\b([^>]*)\/?>/);
+  const tag = /<MyPlex\b([^>]*)\/?>/.exec(body);
   if (!tag) {
     throw new Error('no <MyPlex> element in response');
   }
   const attrs: Account = {};
-  for (const [, key, value] of tag[1]!.matchAll(/(\w+)="([^"]*)"/g)) {
+  for (const [, key, value] of tag[1]!.matchAll(/\b(\w+)="([^"]*)"/g)) {
     attrs[key!] = value;
   }
   return attrs;
@@ -87,7 +90,7 @@ export async function fetchStatus(opts: FetchOptions): Promise<RemoteStatus> {
   const doFetch = opts.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await doFetch(`${opts.url.replace(/\/+$/, '')}/myplex/account`, {
+    response = await doFetch(`${stripTrailingSlashes(opts.url)}/myplex/account`, {
       headers: { ...PLEX_HEADERS, 'X-Plex-Token': opts.token, 'X-Plex-Client-Identifier': opts.clientId },
       signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
     });
@@ -117,7 +120,7 @@ export async function fetchMachineId(opts: FetchOptions): Promise<string> {
   const doFetch = opts.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await doFetch(`${opts.url.replace(/\/+$/, '')}/identity`, {
+    response = await doFetch(`${stripTrailingSlashes(opts.url)}/identity`, {
       headers: { ...PLEX_HEADERS, 'X-Plex-Token': opts.token, 'X-Plex-Client-Identifier': opts.clientId },
       signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
     });
@@ -131,7 +134,7 @@ export async function fetchMachineId(opts: FetchOptions): Promise<string> {
   const body = await response.text();
   const id = (response.headers.get('content-type') ?? '').includes('json')
     ? str((JSON.parse(body) as { MediaContainer?: Account }).MediaContainer?.machineIdentifier)
-    : body.match(/\bmachineIdentifier="([^"]+)"/)?.[1];
+    : /\bmachineIdentifier="([^"]+)"/.exec(body)?.[1];
   if (!id) {
     throw new Error('Plex did not report a machine identifier');
   }

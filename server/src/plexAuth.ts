@@ -26,10 +26,10 @@ interface PendingPin {
 const PIN_TTL_MS = 15 * 60 * 1000;
 
 export class PlexAuth {
-  private pins = new Map<number, PendingPin>();
+  private readonly pins = new Map<number, PendingPin>();
 
-  private clientId: () => string;
-  private fetchImpl: typeof fetch;
+  private readonly clientId: () => string;
+  private readonly fetchImpl: typeof fetch;
 
   constructor(clientId: () => string, fetchImpl: typeof fetch = fetch) {
     this.clientId = clientId;

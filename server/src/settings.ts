@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { readJson, writeJson } from './store.ts';
+import { stripTrailingSlashes } from './url.ts';
 import type { ConfigExport, PublicSettings, Settings, SettingsUpdate } from './types.ts';
 
 const httpUrl = z
   .string()
   .trim()
   .refine((v) => v === '' || /^https?:\/\/[^\s]+$/i.test(v), 'Must be an http:// or https:// URL')
-  .transform((v) => v.replace(/\/+$/, ''));
+  .transform(stripTrailingSlashes);
 
 const targetSchema = z.object({
   id: z.string().min(1),
@@ -50,7 +51,7 @@ export function defaultSettings(): Settings {
 export function seedFromEnv(env: NodeJS.ProcessEnv, base: Settings): Settings {
   const s = structuredClone(base);
   if (env.PLEX_URL) {
-    s.plex.url = env.PLEX_URL.trim().replace(/\/+$/, '');
+    s.plex.url = stripTrailingSlashes(env.PLEX_URL.trim());
   }
   if (env.PLEX_TOKEN) {
     s.plex.token = env.PLEX_TOKEN.trim();
@@ -164,9 +165,9 @@ export function applyUpdate(current: Settings, update: SettingsUpdate): Settings
 
 export class SettingsStore {
   private current!: Settings;
-  private listeners: ((s: Settings) => void)[] = [];
+  private readonly listeners: ((s: Settings) => void)[] = [];
 
-  private file: string;
+  private readonly file: string;
 
   constructor(file: string) {
     this.file = file;

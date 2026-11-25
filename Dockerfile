@@ -9,7 +9,8 @@ ARG APPRISE_IMAGE=caronc/apprise:2.2.0
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# No dependency needs its install script (only fsevents has one, and it's macOS only).
+RUN npm ci --ignore-scripts
 COPY server ./server
 COPY web ./web
 RUN npm run build && npm prune --omit=dev

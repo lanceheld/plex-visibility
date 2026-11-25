@@ -22,11 +22,11 @@ const PIN_TTL_MS = 15 * 60 * 1000; // as in plexAuth.ts
 const MAX_PENDING = 10; // the routes are public; don't let them pile up plex.tv PINs
 
 export class PinRecovery {
-  private pins = new Map<number, { createdAt: number; verified: boolean }>();
+  private readonly pins = new Map<number, { createdAt: number; verified: boolean }>();
 
-  private plexAuth: PlexAuth;
-  private settings: SettingsStore;
-  private fetchImpl?: typeof fetch;
+  private readonly plexAuth: PlexAuth;
+  private readonly settings: SettingsStore;
+  private readonly fetchImpl?: typeof fetch;
 
   constructor(plexAuth: PlexAuth, settings: SettingsStore, fetchImpl?: typeof fetch) {
     this.plexAuth = plexAuth;

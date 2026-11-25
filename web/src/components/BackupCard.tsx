@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import { api, type PublicSettings } from '../api.ts';
 import { Button, Card, useAction, useToast } from './ui.tsx';
 
-export function BackupCard({ onImported }: { onImported: (s: PublicSettings) => void }) {
+export function BackupCard({ onImported }: Readonly<{ onImported: (s: PublicSettings) => void }>) {
   const { busy, run } = useAction();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);

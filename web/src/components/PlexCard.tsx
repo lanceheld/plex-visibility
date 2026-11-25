@@ -9,7 +9,10 @@ type Flow =
   | { step: 'waiting'; pinId: number }
   | { step: 'choose'; pinId: number; servers: PlexServerOption[] };
 
-export function PlexCard({ settings, onSaved }: { settings: PublicSettings; onSaved: (s: PublicSettings) => void }) {
+export function PlexCard({
+  settings,
+  onSaved,
+}: Readonly<{ settings: PublicSettings; onSaved: (s: PublicSettings) => void }>) {
   const toast = useToast();
   const { busy, run } = useAction();
   const [flow, setFlow] = useState<Flow>({ step: 'idle' });
@@ -106,6 +109,12 @@ export function PlexCard({ settings, onSaved }: { settings: PublicSettings; onSa
   };
 
   const configured = settings.plex.url && settings.plex.hasToken;
+  let signInLabel = 'Sign in with Plex';
+  if (flow.step === 'waiting') {
+    signInLabel = 'Waiting for Plex…';
+  } else if (configured) {
+    signInLabel = 'Sign in again';
+  }
 
   return (
     <Card
@@ -152,7 +161,7 @@ export function PlexCard({ settings, onSaved }: { settings: PublicSettings; onSa
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="primary" onClick={signIn} busy={busy === 'pin' || flow.step === 'waiting'}>
             {flow.step !== 'waiting' && <LogIn className="size-4" />}
-            {flow.step === 'waiting' ? 'Waiting for Plex…' : configured ? 'Sign in again' : 'Sign in with Plex'}
+            {signInLabel}
           </Button>
           {flow.step === 'waiting' && (
             <Button variant="ghost" onClick={() => setFlow({ step: 'idle' })}>
@@ -207,7 +216,14 @@ export function PlexCard({ settings, onSaved }: { settings: PublicSettings; onSa
   );
 }
 
-function TestBadge({ status }: { status: RemoteStatus }) {
+function connectionKind(c: { local: boolean; relay: boolean }): string {
+  if (c.relay) {
+    return 'Relay';
+  }
+  return c.local ? 'Local' : 'Remote';
+}
+
+function TestBadge({ status }: Readonly<{ status: RemoteStatus }>) {
   const meta = STATE_META[status.state];
   const reachedServer =
     status.state !== 'server_down' && status.state !== 'auth_error' && status.state !== 'unconfigured';
@@ -226,12 +242,12 @@ function ServerPicker({
   onPick,
   onCancel,
   busy,
-}: {
+}: Readonly<{
   servers: PlexServerOption[];
   onPick: (server: PlexServerOption, uri: string) => void;
   onCancel: () => void;
   busy: boolean;
-}) {
+}>) {
   const [serverId, setServerId] = useState(servers.find((s) => s.owned)?.id ?? servers[0]!.id);
   const server = servers.find((s) => s.id === serverId)!;
   const [uri, setUri] = useState(server.connections[0]?.uri ?? '');
@@ -279,7 +295,7 @@ function ServerPicker({
                 className="accent-amber-500"
               />
               <span className="min-w-0 flex-1 truncate font-mono text-xs">{c.uri}</span>
-              <Badge tone={c.local ? 'ok' : 'idle'}>{c.relay ? 'Relay' : c.local ? 'Local' : 'Remote'}</Badge>
+              <Badge tone={c.local ? 'ok' : 'idle'}>{connectionKind(c)}</Badge>
             </label>
           ))}
         </div>

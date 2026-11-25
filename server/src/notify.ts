@@ -31,7 +31,8 @@ export function render(event: MonitorEvent, serverName: string): { title: string
   const { status } = event;
   const lines = [status.detail];
   if (status.publicAddress) {
-    lines.push(`Public endpoint: ${status.publicAddress}${status.publicPort ? `:${status.publicPort}` : ''}`);
+    const port = status.publicPort ? ':' + status.publicPort : '';
+    lines.push(`Public endpoint: ${status.publicAddress}${port}`);
   }
   if (event.downSince) {
     const label = event.kind === 'recovered' ? 'Was down for' : 'Down for';
@@ -64,8 +65,8 @@ interface AppriseSchema {
 export class AppriseClient {
   private services: ServiceInfo[] | null = null;
 
-  private baseUrl: string;
-  private fetchImpl: typeof fetch;
+  private readonly baseUrl: string;
+  private readonly fetchImpl: typeof fetch;
 
   constructor(baseUrl = 'http://127.0.0.1:8000', fetchImpl: typeof fetch = fetch) {
     this.baseUrl = baseUrl;
