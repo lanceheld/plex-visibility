@@ -15,5 +15,3 @@ services:
       # Run as your user so ./config is owned by you (find yours with `id`).
       PUID: 1000
       PGID: 1000
-      # Strongly recommended if anyone else can reach port 8080.
-      UI_PASSWORD: ${UI_PASSWORD:-}

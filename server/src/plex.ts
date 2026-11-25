@@ -10,10 +10,11 @@
  *   publicAddress/Port   what plex.tv tested
  */
 import type { RemoteStatus } from './types.ts';
+import { APP_VERSION } from './version.ts';
 
 export const PLEX_HEADERS = {
   'X-Plex-Product': 'Plex Visibility',
-  'X-Plex-Version': '0.2.0',
+  'X-Plex-Version': APP_VERSION,
   Accept: 'application/json',
 };
 

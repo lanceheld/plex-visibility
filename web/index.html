@@ -6,6 +6,15 @@
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Plex Visibility</title>
+    <script>
+      // Apply the saved theme before first paint so the page doesn't flash. Keep in sync with src/theme.ts.
+      (function () {
+        var pref = localStorage.getItem('theme') || 'dark';
+        var dark = pref === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches : pref !== 'light';
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

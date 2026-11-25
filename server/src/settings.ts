@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { readJson, writeJson } from './store.ts';
-import type { PublicSettings, Settings, SettingsUpdate } from './types.ts';
+import type { ConfigExport, PublicSettings, Settings, SettingsUpdate } from './types.ts';
 
 const httpUrl = z
   .string()
@@ -71,6 +71,40 @@ export function toPublic(s: Settings): PublicSettings {
   return { ...rest, plex: { url: plex.url, serverName: plex.serverName, hasToken: plex.token !== '' } };
 }
 
+export function exportConfig(s: Settings, version: string, now = new Date()): ConfigExport {
+  const { clientId: _, ...settings } = structuredClone(s);
+  return { app: 'plex-visibility', version, exportedAt: now.toISOString(), settings };
+}
+
+const importSchema = z.object({
+  app: z.literal('plex-visibility', { error: 'Not a Plex Visibility configuration file' }),
+  settings: z.record(z.string(), z.unknown()),
+});
+
+/**
+ * Turn an uploaded export into complete settings. Missing fields get defaults
+ * (so older exports still load), destinations without an id get one, and this
+ * install keeps its own plex.tv client ID.
+ */
+export function parseImport(raw: unknown, current: Settings): Settings {
+  const { settings: imported } = importSchema.parse(raw);
+  const r = imported as Partial<Settings>;
+  const d = defaultSettings();
+  // Untrusted file contents: fill in what's missing; settingsSchema validates the rest.
+  const rawTargets: unknown = r.notifications?.targets;
+  const targets = Array.isArray(rawTargets)
+    ? rawTargets.map((t: Record<string, unknown>) => ({ enabled: true, label: '', ...t, id: t?.id || randomUUID() }))
+    : d.notifications.targets;
+  return settingsSchema.parse({
+    ...d,
+    ...r,
+    clientId: current.clientId,
+    plex: { ...d.plex, ...r.plex },
+    monitor: { ...d.monitor, ...r.monitor },
+    notifications: { ...d.notifications, ...r.notifications, targets },
+  });
+}
+
 export function applyUpdate(current: Settings, update: SettingsUpdate): Settings {
   const next: Settings = {
     ...current,
@@ -118,6 +152,16 @@ export class SettingsStore {
 
   async update(update: SettingsUpdate): Promise<Settings> {
     this.current = applyUpdate(this.current, update);
+    await writeJson(this.file, this.current);
+    for (const fn of this.listeners) {
+      fn(this.current);
+    }
+    return this.current;
+  }
+
+  /** Replace everything, e.g. from an imported backup. */
+  async replace(next: Settings): Promise<Settings> {
+    this.current = settingsSchema.parse(next);
     await writeJson(this.file, this.current);
     for (const fn of this.listeners) {
       fn(this.current);

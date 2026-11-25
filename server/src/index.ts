@@ -2,12 +2,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { AuthStore } from './auth.ts';
 import { createApp } from './app.ts';
 import { History } from './history.ts';
 import { AppriseClient } from './notify.ts';
 import { PlexAuth } from './plexAuth.ts';
 import { MonitorService } from './service.ts';
 import { SettingsStore } from './settings.ts';
+import { APP_VERSION } from './version.ts';
 
 const env = process.env;
 const dataDir = env.DATA_DIR ?? '/config/plex-visibility';
@@ -21,11 +23,14 @@ await settings.load();
 const history = new History(path.join(dataDir, 'history.json'));
 await history.load();
 
+const auth = new AuthStore(path.join(dataDir, 'auth.json'));
+await auth.load();
+
 const apprise = new AppriseClient(env.APPRISE_URL ?? 'http://127.0.0.1:8000');
 const service = new MonitorService({ settings, history, apprise });
 const plexAuth = new PlexAuth(() => settings.get().clientId);
 
-const app = createApp({ settings, service, apprise, plexAuth, password: env.UI_PASSWORD || undefined });
+const app = createApp({ settings, service, apprise, plexAuth, auth });
 const relativePublic = path.relative(process.cwd(), publicDir);
 app.use('/*', serveStatic({ root: relativePublic }));
 // Single-page app: unknown non-API paths get index.html.
@@ -33,11 +38,9 @@ app.get('*', serveStatic({ root: relativePublic, path: 'index.html' }));
 
 service.start();
 const server = serve({ fetch: app.fetch, port, hostname: env.HOST ?? '0.0.0.0' }, (info) => {
-  console.log(
-    `Plex Visibility ${env.APP_VERSION ?? 'dev'} listening on http://${info.address}:${info.port} (data in ${dataDir})`,
-  );
-  if (!env.UI_PASSWORD) {
-    console.log('UI_PASSWORD is not set: anyone who can reach this port can change settings.');
+  console.log(`Plex Visibility ${APP_VERSION} listening on http://${info.address}:${info.port} (data in ${dataDir})`);
+  if (auth.mustChange) {
+    console.log('The admin password is still the default ("admin"). Log in to Settings to change it.');
   }
 });
 

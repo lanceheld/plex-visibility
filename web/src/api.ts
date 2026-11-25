@@ -1,4 +1,6 @@
 import type {
+  AuthState,
+  ConfigExport,
   PinStatus,
   PublicSettings,
   RemoteStatus,
@@ -16,14 +18,25 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     headers: { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  const data = (await res.json().catch(() => ({}))) as { error?: string; mustChangePassword?: boolean };
+  // The session ended (expired, logged out elsewhere, or the password changed): let the app show the login.
+  if (res.status === 401 && !url.startsWith('/api/auth')) {
+    window.dispatchEvent(new Event(LOGGED_OUT_EVENT));
+  }
   if (!res.ok) {
     throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
   }
   return data as T;
 }
 
+export const LOGGED_OUT_EVENT = 'plex-visibility:logged-out';
+
 export const api = {
+  auth: () => request<AuthState>('GET', '/api/auth'),
+  login: (password: string) => request<AuthState>('POST', '/api/auth/login', { password }),
+  logout: () => request<AuthState>('POST', '/api/auth/logout', {}),
+  changePassword: (current: string, next: string) =>
+    request<AuthState>('POST', '/api/auth/password', { current, next }),
   status: () => request<StatusResponse>('GET', '/api/status'),
   checkNow: () => request<StatusResponse>('POST', '/api/check', {}),
   settings: () => request<PublicSettings>('GET', '/api/settings'),
@@ -35,6 +48,8 @@ export const api = {
   deleteTarget: (id: string) => request<PublicSettings>('DELETE', `/api/targets/${id}`),
   testTarget: (id: string) => request<TestResult>('POST', `/api/targets/${id}/test`, {}),
   testUrl: (url: string) => request<{ ok: boolean; error?: string }>('POST', '/api/targets/test', { url }),
+  exportConfig: () => request<ConfigExport>('POST', '/api/config/export', {}),
+  importConfig: (config: unknown) => request<PublicSettings>('POST', '/api/config/import', config),
   testPlex: (url?: string, token?: string) => request<RemoteStatus>('POST', '/api/plex/test', { url, token }),
   createPin: () => request<{ id: number; authUrl: string }>('POST', '/api/plex/pin', {}),
   checkPin: (id: number) => request<PinStatus>('GET', `/api/plex/pin/${id}`),

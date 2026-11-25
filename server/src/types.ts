@@ -67,6 +67,14 @@ export interface AlertLogEntry {
   delivered: boolean;
 }
 
+/** A settings backup. Includes secrets: the Plex token and full notification URLs. */
+export interface ConfigExport {
+  app: 'plex-visibility';
+  version: string;
+  exportedAt: string;
+  settings: Omit<Settings, 'clientId'>;
+}
+
 export interface StatusResponse {
   current: RemoteStatus | null;
   alerting: boolean;
@@ -76,6 +84,15 @@ export interface StatusResponse {
   segments: Segment[]; // last 7 days, oldest first
   alerts: AlertLogEntry[]; // newest first
   appriseReady: boolean;
+  version: string;
+  // Enough for the public status page, which can't read the (admin-only) settings.
+  serverName: string;
+  enabledTargets: number;
+}
+
+export interface AuthState {
+  authenticated: boolean;
+  mustChangePassword: boolean;
 }
 
 export interface TestResult {

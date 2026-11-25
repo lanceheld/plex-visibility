@@ -1,13 +1,16 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { Hono } from 'hono';
-import { basicAuth } from 'hono/basic-auth';
+import { randomUUID } from 'node:crypto';
+import { getConnInfo } from '@hono/node-server/conninfo';
+import { type Context, Hono } from 'hono';
+import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import { type AuthStore, LoginLimiter, SESSION_COOKIE, SESSION_TTL_MS, sessionValid, sessionValue } from './auth.ts';
 import type { AppriseClient } from './notify.ts';
 import { fetchStatus } from './plex.ts';
 import type { PlexAuth } from './plexAuth.ts';
 import type { MonitorService } from './service.ts';
-import { type SettingsStore, settingsSchema, toPublic } from './settings.ts';
+import { exportConfig, parseImport, type SettingsStore, settingsSchema, toPublic } from './settings.ts';
+import { APP_VERSION } from './version.ts';
 import type { NotifyTarget, PublicSettings, Settings } from './types.ts';
 
 export interface AppDeps {
@@ -15,7 +18,7 @@ export interface AppDeps {
   service: MonitorService;
   apprise: AppriseClient;
   plexAuth: PlexAuth;
-  password?: string;
+  auth: AuthStore;
   fetchImpl?: typeof fetch;
 }
 
@@ -77,13 +80,17 @@ const testMessage = {
   body: 'If you can read this, Plex remote access alerts will reach you here.',
 } as const;
 
+/** Routes anyone can use: the read-only status page and logging in. */
+const PUBLIC_API = new Set(['/api/status', '/api/check', '/api/auth', '/api/auth/login', '/api/auth/logout']);
+
 export function createApp(deps: AppDeps): Hono {
-  const { settings, service, apprise, plexAuth } = deps;
+  const { settings, service, apprise, plexAuth, auth } = deps;
   const app = new Hono();
+  const limiter = new LoginLimiter();
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
-      return err.getResponse();
+      return c.json({ error: err.message }, err.status);
     }
     if (err instanceof z.ZodError) {
       return c.json({ error: err.issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ') }, 400);
@@ -94,26 +101,80 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get('/healthz', (c) => c.text('ok'));
 
-  if (deps.password) {
-    const expected = Buffer.from(deps.password);
-    app.use(
-      '*',
-      basicAuth({
-        verifyUser: (_user, pass) => {
-          const given = Buffer.from(pass);
-          return given.length === expected.length && timingSafeEqual(given, expected);
-        },
-        realm: 'Plex Visibility',
-      }),
-    );
-  }
-
   // Changes must be JSON, which a cross-site form can't send without a CORS preflight.
   app.use('/api/*', async (c, next) => {
     if (c.req.method !== 'GET' && !c.req.header('content-type')?.includes('application/json')) {
       return c.json({ error: 'Expected a JSON request' }, 415);
     }
     await next();
+  });
+
+  // --- admin sessions ---
+  const isLoggedIn = async (c: Context) =>
+    sessionValid(await getSignedCookie(c, auth.secret, SESSION_COOKIE), auth.version);
+
+  const startSession = (c: Context) =>
+    setSignedCookie(c, SESSION_COOKIE, sessionValue(auth.version), auth.secret, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'Strict',
+      secure: new URL(c.req.url).protocol === 'https:' || c.req.header('x-forwarded-proto') === 'https',
+      maxAge: SESSION_TTL_MS / 1000,
+    });
+
+  // Everything except the public routes needs an admin session, and a changed default password.
+  app.use('/api/*', async (c, next) => {
+    if (PUBLIC_API.has(c.req.path)) {
+      return next();
+    }
+    if (!(await isLoggedIn(c))) {
+      return c.json({ error: 'Please log in' }, 401);
+    }
+    if (auth.mustChange && c.req.path !== '/api/auth/password') {
+      return c.json({ error: 'Change the default password first', mustChangePassword: true }, 403);
+    }
+    return next();
+  });
+
+  app.get('/api/auth', async (c) => {
+    const authenticated = await isLoggedIn(c);
+    return c.json({ authenticated, mustChangePassword: authenticated && auth.mustChange });
+  });
+
+  app.post('/api/auth/login', async (c) => {
+    const key = clientAddress(c);
+    const wait = limiter.lockedFor(key);
+    if (wait > 0) {
+      return c.json({ error: `Too many attempts. Try again in ${Math.ceil(wait / 1000)} seconds.` }, 429);
+    }
+    const { password } = await body(c, z.object({ password: z.string().max(1024) }));
+    if (!(await auth.verify(password))) {
+      limiter.fail(key);
+      return c.json({ error: 'Incorrect password' }, 401);
+    }
+    limiter.succeed(key);
+    await startSession(c);
+    return c.json({ authenticated: true, mustChangePassword: auth.mustChange });
+  });
+
+  app.post('/api/auth/logout', (c) => {
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    return c.json({ authenticated: false, mustChangePassword: false });
+  });
+
+  app.post('/api/auth/password', async (c) => {
+    const { current, next } = await body(c, z.object({ current: z.string().max(1024), next: z.string().max(1024) }));
+    if (!(await auth.verify(current))) {
+      return c.json({ error: 'Current password is incorrect' }, 400);
+    }
+    const problem = await auth.checkNewPassword(next);
+    if (problem) {
+      return c.json({ error: problem }, 400);
+    }
+    await auth.setPassword(next);
+    // The new password version signs out other sessions; keep this one.
+    await startSession(c);
+    return c.json({ authenticated: true, mustChangePassword: false });
   });
 
   const body = async <T extends z.ZodType>(c: { req: { json: () => Promise<unknown> } }, schema: T) =>
@@ -179,6 +240,19 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(await apprise.notifyOne(url, testMessage.title, testMessage.body, 'info'));
   });
 
+  // --- backup ---
+  // POST rather than GET: the export holds secrets, so it goes through the JSON-only guard above.
+  app.post('/api/config/export', (c) => {
+    const date = new Date().toISOString().slice(0, 10);
+    c.header('Content-Disposition', `attachment; filename="plex-visibility-config-${date}.json"`);
+    return c.json(exportConfig(settings.get(), APP_VERSION));
+  });
+
+  app.post('/api/config/import', async (c) => {
+    const next = parseImport(await c.req.json().catch(() => null), settings.get());
+    return c.json(publicSettings(await settings.replace(next)));
+  });
+
   // --- Plex connection ---
   app.post('/api/plex/test', async (c) => {
     const given = await body(c, z.object({ url: z.string().optional(), token: z.string().optional() }));
@@ -212,4 +286,13 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   return app;
+}
+
+/** The caller's address, for rate limiting. Proxies' X-Forwarded-For is ignored because it can be forged. */
+function clientAddress(c: Context): string {
+  try {
+    return getConnInfo(c).remote.address ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }

@@ -19,11 +19,18 @@ This pulls `ghcr.io/lanceheld/plex-visibility:stable`. To build from source inst
 
 Open <http://localhost:8080>, go to **Settings**, then:
 
-1. **Sign in with Plex.** This finds your server and stores a token scoped to it. You can also enter an address and token by hand.
-2. **Add a destination.** Search about 180 services (email, ntfy, Pushover, Telegram, Discord, Slack, and others), fill in the URL, and send a test.
-3. **Optional but recommended: add a heartbeat URL.** See [the blind spot](#the-blind-spot-and-the-heartbeat).
+1. **Log in as admin** with the default password `admin`. You'll be asked to choose a new password straight away.
+2. **Sign in with Plex.** This finds your server and stores a token scoped to it. You can also enter an address and token by hand.
+3. **Add a destination.** Search about 180 services (email, ntfy, Pushover, Telegram, Discord, Slack, and others), fill in the URL, and send a test.
+4. **Optional but recommended: add a heartbeat URL.** See [the blind spot](#the-blind-spot-and-the-heartbeat).
 
-Set `UI_PASSWORD` if anyone else can reach port 8080. The settings page can change where your alerts go.
+### Admin password
+
+Settings and everything that changes them need the admin password. The status page stays viewable without logging in.
+
+- The password is stored as a scrypt hash in `/config/plex-visibility/auth.json`. Changing it signs out all other browsers.
+- Repeated wrong passwords from one address are locked out for a while.
+- **Forgot it?** Stop the container, delete `config/plex-visibility/auth.json`, and start it again. The password goes back to `admin`.
 
 ## How it works
 
@@ -56,12 +63,12 @@ If the power, the host, or your internet connection goes down, the monitor can't
 
 Images are published to `ghcr.io/lanceheld/plex-visibility` for `linux/amd64` and `linux/arm64`:
 
-| Tag                | Built from                                   |
-| ------------------ | -------------------------------------------- |
-| `stable`           | The latest published GitHub release          |
-| `1.2.3`            | Release `v1.2.3`                             |
-| `latest`           | The latest commit on `main` (snapshot)       |
-| `1.2.3-4-gabc1234` | A specific snapshot, named by `git describe` |
+| Tag                | Built from                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `stable`           | The latest published GitHub release                                                                     |
+| `1.2.3`            | Release `v1.2.3`                                                                                        |
+| `latest`           | The latest commit on `main` (snapshot)                                                                  |
+| `1.2.3-4-gabc1234` | A specific snapshot: 4 commits after `v1.2.3`, at commit `abc1234` (`0.0.0-…` before the first release) |
 
 Use `stable` unless you want unreleased changes.
 
@@ -71,7 +78,6 @@ Everything is set in the UI and saved to `/config/plex-visibility/settings.json`
 
 | Variable                                                 | Default   |                                                                                                                          |
 | -------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `UI_PASSWORD`                                            | _(none)_  | Protects the UI and API with HTTP basic auth (any username)                                                              |
 | `PORT`                                                   | `8080`    | Web UI port inside the container                                                                                         |
 | `PUID` / `PGID`                                          | `1000`    | User the processes run as, so `./config` is owned by you                                                                 |
 | `TZ`                                                     | `Etc/UTC` | Time zone for logs                                                                                                       |

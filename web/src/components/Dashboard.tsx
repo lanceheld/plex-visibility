@@ -9,19 +9,17 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import { useState } from 'react';
-import type { AlertLogEntry, PublicSettings, Segment, StatusResponse } from '../api.ts';
+import type { AlertLogEntry, Segment, StatusResponse } from '../api.ts';
 import { ago, dateTime, duration, percent, STATE_META, TONE } from '../format.ts';
 import { Badge, Button, Card, cx, useNow } from './ui.tsx';
 
 export function Dashboard({
   status,
-  settings,
   onCheck,
   checking,
   goToSettings,
 }: {
   status: StatusResponse;
-  settings: PublicSettings;
   onCheck: () => void;
   checking: boolean;
   goToSettings: () => void;
@@ -31,7 +29,7 @@ export function Dashboard({
   const meta = STATE_META[current?.state ?? 'unconfigured'];
   const tone = TONE[meta.tone];
   const Icon = meta.icon;
-  const enabledTargets = settings.notifications.targets.filter((t) => t.enabled).length;
+  const enabledTargets = status.enabledTargets;
   const endpoint = current?.publicAddress
     ? `${current.publicAddress}${current.publicPort ? `:${current.publicPort}` : ''}`
     : null;
@@ -62,7 +60,7 @@ export function Dashboard({
             </div>
             <div>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                {settings.plex.serverName || 'Plex Media Server'}
+                {status.serverName || 'Plex Media Server'}
               </p>
               <h1 className={cx('text-2xl font-bold tracking-tight sm:text-3xl', tone.text)}>{meta.label}</h1>
               <p className="mt-1 max-w-xl text-sm text-slate-600 dark:text-slate-300">

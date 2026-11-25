@@ -4,6 +4,7 @@ import type { History } from './history.ts';
 import { type AppriseClient, pingHeartbeat, render } from './notify.ts';
 import { fetchStatus } from './plex.ts';
 import type { SettingsStore } from './settings.ts';
+import { APP_VERSION } from './version.ts';
 import type { RemoteStatus, Settings, StatusResponse } from './types.ts';
 
 const DAY = 86400_000;
@@ -115,6 +116,7 @@ export class MonitorService {
 
   snapshot(now = new Date()): StatusResponse {
     const { history } = this.deps;
+    const s = this.deps.settings.get();
     return {
       current: this.current,
       alerting: this.monitor.alerting,
@@ -124,6 +126,9 @@ export class MonitorService {
       segments: history.segmentsSince(7 * DAY, now),
       alerts: history.data.alerts.slice(0, 50),
       appriseReady: this.appriseReady,
+      version: APP_VERSION,
+      serverName: s.plex.serverName,
+      enabledTargets: s.notifications.targets.filter((t) => t.enabled).length,
     };
   }
 }

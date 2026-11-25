@@ -41,7 +41,13 @@ jobs:
             # A pre-release gets its version tag but doesn't move `stable`.
             if [ "$PRERELEASE" = "true" ]; then channel=""; else channel="stable"; fi
           else
-            version="$(git describe --tags --always --dirty)"
+            # Always <tag>-<commits since tag>-g<hash>, so snapshot tags have two dashes
+            # (the purge workflow relies on this). --long keeps a snapshot of a tagged
+            # commit from reusing the release's tag. Before the first tag, fall back to a
+            # 0.0.0 pseudo version in the same shape.
+            if ! version="$(git describe --tags --long --dirty 2>/dev/null)"; then
+              version="0.0.0-$(git rev-list --count HEAD)-g$(git rev-parse --short HEAD)"
+            fi
             version="${version#v}"
             channel="latest"
           fi
