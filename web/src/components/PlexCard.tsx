@@ -41,7 +41,7 @@ export function PlexCard({
         if (res.status === 'authorized') {
           popup.current?.close();
           if (res.servers.length === 0) {
-            toast('bad', 'Signed in, but this Plex account has no servers.');
+            toast('bad', 'Signed in, but this PLEX account has no servers.');
             setFlow({ step: 'idle' });
           } else {
             setFlow({ step: 'choose', pinId: flow.pinId, servers: res.servers });
@@ -99,7 +99,7 @@ export function PlexCard({
     const s = await run(
       'save',
       () => api.updateSettings({ plex: { url, ...(token ? { token } : {}) } }),
-      'Plex server saved',
+      'PLEX server saved',
     );
     if (s) {
       onSaved(s);
@@ -109,17 +109,17 @@ export function PlexCard({
   };
 
   const configured = settings.plex.url && settings.plex.hasToken;
-  let signInLabel = 'Sign in with Plex';
+  let signInLabel = 'Sign in with PLEX';
   if (flow.step === 'waiting') {
-    signInLabel = 'Waiting for Plex…';
+    signInLabel = 'Waiting for PLEX…';
   } else if (configured) {
     signInLabel = 'Sign in again';
   }
 
   return (
     <Card
-      title="Plex server"
-      description="The server to monitor. Signing in with Plex finds your server and gets a token for you."
+      title="PLEX server"
+      description="The server to monitor. Signing in with PLEX finds your server and gets a token for you."
       actions={
         configured && (
           <Button size="sm" onClick={() => runTest()} busy={busy === 'test'}>
@@ -132,7 +132,7 @@ export function PlexCard({
         <div className="mb-4 flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-950/60">
           <Server className="size-5 text-slate-400" />
           <div className="min-w-0 flex-1">
-            <p className="font-medium">{settings.plex.serverName || 'Plex Media Server'}</p>
+            <p className="font-medium">{settings.plex.serverName || 'PLEX Media Server'}</p>
             <p className="truncate font-mono text-xs text-slate-500 dark:text-slate-400">{settings.plex.url}</p>
           </div>
           {test && <TestBadge status={test} />}
@@ -181,7 +181,7 @@ export function PlexCard({
             <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.10:32400" />
           </Field>
           <Field
-            label="Plex token"
+            label="PLEX token"
             hint={
               <>
                 {settings.plex.hasToken ? 'Leave blank to keep the saved token. ' : ''}

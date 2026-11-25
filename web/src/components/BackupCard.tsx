@@ -64,7 +64,7 @@ export function BackupCard({ onImported }: Readonly<{ onImported: (s: PublicSett
       </div>
       <p className="mt-4 flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
         <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
-        The exported file contains your Plex token and full notification URLs, including any passwords in them. Keep it
+        The exported file contains your PLEX token and full notification URLs, including any passwords in them. Keep it
         somewhere private.
       </p>
     </Card>

@@ -27,6 +27,7 @@ import {
   settingsSchema,
   toPublic,
 } from './settings.ts';
+import type { UpdateChecker } from './updates.ts';
 import { APP_VERSION } from './version.ts';
 import type { AuthState, NotifyTarget, PublicSettings, Settings } from './types.ts';
 
@@ -36,6 +37,7 @@ export interface AppDeps {
   apprise: AppriseClient;
   plexAuth: PlexAuth;
   auth: AuthStore;
+  updates: UpdateChecker;
   fetchImpl?: typeof fetch;
 }
 
@@ -98,12 +100,19 @@ const testMessage = {
 } as const;
 
 /** Routes anyone can use: the read-only status page, logging in, and removing a forgotten PIN. */
-const PUBLIC_API = new Set(['/api/status', '/api/check', '/api/auth', '/api/auth/login', '/api/auth/logout']);
+const PUBLIC_API = new Set([
+  '/api/status',
+  '/api/check',
+  '/api/update',
+  '/api/auth',
+  '/api/auth/login',
+  '/api/auth/logout',
+]);
 const RECOVER = '/api/auth/recover';
 const isPublic = (path: string) => PUBLIC_API.has(path) || path === RECOVER || path.startsWith(`${RECOVER}/`);
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, service, apprise, plexAuth, auth } = deps;
+  const { settings, service, apprise, plexAuth, auth, updates } = deps;
   const app = new Hono();
   // Per address, plus one for everyone: a 6-digit PIN mustn't fall to guesses spread over many addresses.
   const limiter = new LoginLimiter();
@@ -237,7 +246,7 @@ export function createApp(deps: AppDeps): Hono {
   app.post(RECOVER, async (c) => {
     const { pinId } = await body(c, z.object({ pinId: z.number() }));
     if (!recovery.verified(pinId)) {
-      throw new HTTPException(410, { message: 'Sign-in expired. Please sign in with Plex again.' });
+      throw new HTTPException(410, { message: 'Sign-in expired. Please sign in with PLEX again.' });
     }
     recovery.drop(pinId);
     if (auth.pinSet) {
@@ -279,6 +288,9 @@ export function createApp(deps: AppDeps): Hono {
     await service.checkNow();
     return c.json(service.snapshot());
   });
+
+  // The last answer from GitHub; checking happens on the UpdateChecker's own schedule.
+  app.get('/api/update', (c) => c.json(updates.info()));
 
   // --- settings ---
   app.get('/api/settings', (c) => c.json(publicSettings(settings.get())));
@@ -358,7 +370,7 @@ export function createApp(deps: AppDeps): Hono {
     );
     const token = plexAuth.serverToken(pinId, serverId);
     if (!token) {
-      throw new HTTPException(410, { message: 'Sign-in expired. Please sign in with Plex again.' });
+      throw new HTTPException(410, { message: 'Sign-in expired. Please sign in with PLEX again.' });
     }
     const s = await settings.update({ plex: { url: uri, token, serverName: name } });
     plexAuth.finish(pinId);

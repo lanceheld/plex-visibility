@@ -9,6 +9,7 @@ import type {
   SettingsUpdate,
   StatusResponse,
   TestResult,
+  UpdateInfo,
 } from '../../server/src/types.ts';
 
 export type * from '../../server/src/types.ts';
@@ -63,6 +64,7 @@ export const api = {
   removePinWithPlex: (pinId: number) => request<AuthState>('POST', '/api/auth/recover', { pinId }),
   status: () => request<StatusResponse>('GET', '/api/status'),
   checkNow: () => request<StatusResponse>('POST', '/api/check', {}),
+  update: () => request<UpdateInfo>('GET', '/api/update'),
   settings: () => request<PublicSettings>('GET', '/api/settings'),
   updateSettings: (u: SettingsUpdate) => request<PublicSettings>('PUT', '/api/settings', u),
   services: () => request<ServiceInfo[]>('GET', '/api/services'),

@@ -116,7 +116,7 @@ export class PlexAuth {
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      throw new Error(`Could not list your Plex servers (HTTP ${res.status})`);
+      throw new Error(`Could not list your PLEX servers (HTTP ${res.status})`);
     }
     const resources = (await res.json()) as PlexResource[];
     return resources

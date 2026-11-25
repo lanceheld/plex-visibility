@@ -15,31 +15,31 @@ export const STATE_META: Record<
     label: 'Not reachable remotely',
     tone: 'bad',
     icon: XCircle,
-    hint: "Plex is running, but plex.tv can't connect to it. Check port forwarding, UPnP, or whether your public IP changed.",
+    hint: "PLEX is running, but plex.tv can't connect to it. Check port forwarding, UPnP, or whether your public IP changed.",
   },
   signed_out: {
     label: 'Signed out of plex.tv',
     tone: 'warn',
     icon: LogOut,
-    hint: "The server isn't signed in to plex.tv, so remote access can't work. Sign the server back in from Plex settings.",
+    hint: "The server isn't signed in to plex.tv, so remote access can't work. Sign the server back in from PLEX settings.",
   },
   server_down: {
     label: 'Server not responding',
     tone: 'bad',
     icon: ServerCrash,
-    hint: "The monitor can't reach your Plex server. It may be stopped, or its address may have changed.",
+    hint: "The monitor can't reach your PLEX server. It may be stopped, or its address may have changed.",
   },
   auth_error: {
     label: "Can't sign in to server",
     tone: 'warn',
     icon: KeyRound,
-    hint: "Plex rejected the monitor's token. Sign in with Plex again in Settings.",
+    hint: "PLEX rejected the monitor's token. Sign in with PLEX again in Settings.",
   },
   unconfigured: {
     label: 'Not set up yet',
     tone: 'idle',
     icon: CircleDashed,
-    hint: 'Connect your Plex server in Settings to start monitoring.',
+    hint: 'Connect your PLEX server in Settings to start monitoring.',
   },
 };
 

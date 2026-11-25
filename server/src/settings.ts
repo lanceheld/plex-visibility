@@ -95,7 +95,7 @@ export function migrate(raw: RawSettings, from: number, migrations: Migrations =
   }
   if (from > to) {
     throw new SettingsVersionError(
-      `These settings are from a newer version of Plex Visibility (format ${from}; this server understands up to ${to}). Update Plex Visibility first.`,
+      `These settings are from a newer version of PLEX Visibility (format ${from}; this server understands up to ${to}). Update PLEX Visibility first.`,
     );
   }
   let result = raw;
@@ -136,7 +136,7 @@ export function exportConfig(s: Settings, version: string, now = new Date()): Co
 }
 
 const importSchema = z.object({
-  app: z.literal('plex-visibility', { error: 'Not a Plex Visibility configuration file' }),
+  app: z.literal('plex-visibility', { error: 'Not a PLEX Visibility configuration file' }),
   // Exports made before schemaVersion existed are format 1.
   schemaVersion: z.unknown().optional(),
   settings: z.record(z.string(), z.unknown()),

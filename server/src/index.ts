@@ -9,6 +9,7 @@ import { AppriseClient } from './notify.ts';
 import { PlexAuth } from './plexAuth.ts';
 import { MonitorService } from './service.ts';
 import { SettingsStore } from './settings.ts';
+import { UpdateChecker } from './updates.ts';
 import { APP_VERSION } from './version.ts';
 
 const env = process.env;
@@ -30,13 +31,20 @@ const apprise = new AppriseClient(env.APPRISE_URL ?? 'http://127.0.0.1:8000');
 const service = new MonitorService({ settings, history, apprise });
 const plexAuth = new PlexAuth(() => settings.get().clientId);
 
-const app = createApp({ settings, service, apprise, plexAuth, auth });
+// UPDATE_CHECK=false stops the twice-daily check of GitHub for a newer release.
+const updates = new UpdateChecker({
+  currentVersion: APP_VERSION,
+  enabled: env.UPDATE_CHECK?.trim().toLowerCase() !== 'false',
+});
+
+const app = createApp({ settings, service, apprise, plexAuth, auth, updates });
 const relativePublic = path.relative(process.cwd(), publicDir);
 app.use('/*', serveStatic({ root: relativePublic }));
 // Single-page app: unknown non-API paths get index.html.
 app.get('*', serveStatic({ root: relativePublic, path: 'index.html' }));
 
 service.start();
+updates.start();
 const server = serve({ fetch: app.fetch, port, hostname: env.HOST ?? '0.0.0.0' }, (info) => {
   console.log(`Plex Visibility ${APP_VERSION} listening on http://${info.address}:${info.port} (data in ${dataDir})`);
   if (!auth.pinSet) {
@@ -47,6 +55,7 @@ const server = serve({ fetch: app.fetch, port, hostname: env.HOST ?? '0.0.0.0' }
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     service.stop();
+    updates.stop();
     server.close();
     void history.save().finally(() => process.exit(0));
   });

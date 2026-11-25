@@ -9,6 +9,7 @@ import { AppriseClient } from '../src/notify.ts';
 import { PlexAuth } from '../src/plexAuth.ts';
 import { MonitorService } from '../src/service.ts';
 import { SettingsStore } from '../src/settings.ts';
+import { UpdateChecker } from '../src/updates.ts';
 import type { ConfigExport, PublicSettings, StatusResponse } from '../src/types.ts';
 
 describe('maskUrl', () => {
@@ -57,6 +58,12 @@ async function setup(env: NodeJS.ProcessEnv = {}, { pin = true, loggedIn = true 
       ]);
     }
     // The signed-in account (above) owns s1, which is the server at http://plex:32400.
+    if (url.startsWith('https://api.github.com/')) {
+      return Response.json({
+        tag_name: 'v9.0.0',
+        html_url: 'https://github.com/lanceheld/plex-visibility/releases/tag/v9.0.0',
+      });
+    }
     if (url.endsWith('/identity')) {
       const machineIdentifier = url.startsWith('http://plex:32400/') ? 's1' : 'someone-elses';
       return Response.json({ MediaContainer: { machineIdentifier } });
@@ -75,7 +82,8 @@ async function setup(env: NodeJS.ProcessEnv = {}, { pin = true, loggedIn = true 
   // A low scrypt cost keeps the many PIN checks here fast (and from timing out when test files run in parallel).
   const auth = new AuthStore(undefined, { scryptCost: 16 });
   await auth.load();
-  const app = createApp({ settings, service, apprise, plexAuth, auth, fetchImpl: netFetch });
+  const updates = new UpdateChecker({ currentVersion: '1.0.0', fetchImpl: netFetch });
+  const app = createApp({ settings, service, apprise, plexAuth, auth, updates, fetchImpl: netFetch });
 
   let cookie = '';
   const request = (method: string, url: string, body?: unknown) =>
@@ -101,7 +109,7 @@ async function setup(env: NodeJS.ProcessEnv = {}, { pin = true, loggedIn = true 
       await json('POST', '/api/auth/logout', {});
     }
   }
-  return { app, json, get, settings, sent, auth, setCookie: (c: string) => (cookie = c) };
+  return { app, json, get, settings, sent, auth, updates, setCookie: (c: string) => (cookie = c) };
 }
 
 const PIN = '482913';
@@ -231,9 +239,13 @@ describe('settings PIN', () => {
     expect((await ctx.get('/api/settings')).status).toBe(401);
   });
 
-  it('keeps the status page and health check public', async () => {
+  it('keeps the status page, update check and health check public', async () => {
     const ctx = await setup({}, { loggedIn: false });
     expect((await ctx.get('/api/status')).status).toBe(200);
+    await ctx.updates.check();
+    const update = await ctx.get('/api/update');
+    expect(update.status).toBe(200);
+    expect(await update.json()).toMatchObject({ current: '1.0.0', latest: '9.0.0', available: true });
     expect((await ctx.json('POST', '/api/check', {})).status).toBe(200);
     expect((await ctx.app.request('/healthz')).status).toBe(200);
     for (const [method, url] of [
@@ -416,7 +428,7 @@ describe('config backup', () => {
       settings: { ...config.settings, plex: { ...config.settings.plex, token: 'replaced' } },
     });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toContain('newer version of Plex Visibility');
+    expect(((await res.json()) as { error: string }).error).toContain('newer version of PLEX Visibility');
     expect(ctx.settings.get().plex.token).toBe('keep');
   });
 
@@ -424,7 +436,7 @@ describe('config backup', () => {
     const ctx = await setup({ PLEX_TOKEN: 'keep' });
     const notOurs = await ctx.json('POST', '/api/config/import', { settings: {} });
     expect(notOurs.status).toBe(400);
-    expect(((await notOurs.json()) as { error: string }).error).toContain('Not a Plex Visibility configuration file');
+    expect(((await notOurs.json()) as { error: string }).error).toContain('Not a PLEX Visibility configuration file');
     const invalid = await ctx.json('POST', '/api/config/import', {
       app: 'plex-visibility',
       settings: { monitor: { checkInterval: 1 } },
