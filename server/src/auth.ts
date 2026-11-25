@@ -14,7 +14,15 @@ import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { readJson, writeJson } from './store.ts';
 
-const scrypt = promisify(scryptCb) as (pin: string, salt: Buffer, keylen: number) => Promise<Buffer>;
+const scrypt = promisify(scryptCb) as (
+  pin: string,
+  salt: Buffer,
+  keylen: number,
+  options: { N: number },
+) => Promise<Buffer>;
+
+/** scrypt's CPU and memory cost (N). Node's default; tests pass a lower one to run quickly. */
+const SCRYPT_COST = 16_384;
 
 export const PIN_LENGTH = 6;
 export const PIN_PATTERN = new RegExp(String.raw`^\d{${PIN_LENGTH}}$`);
@@ -27,16 +35,18 @@ interface AuthData {
   secret: string; // base64, signs session cookies
 }
 
-async function hashPin(pin: string, salt: Buffer): Promise<Buffer> {
-  return scrypt(pin, salt, 64);
-}
-
 export class AuthStore {
   private data!: AuthData;
   private readonly file?: string;
+  private readonly scryptCost: number;
 
-  constructor(file?: string) {
+  constructor(file?: string, { scryptCost = SCRYPT_COST } = {}) {
     this.file = file;
+    this.scryptCost = scryptCost;
+  }
+
+  private hashPin(pin: string, salt: Buffer): Promise<Buffer> {
+    return scrypt(pin, salt, 64, { N: this.scryptCost });
   }
 
   async load(): Promise<void> {
@@ -69,7 +79,7 @@ export class AuthStore {
       return false;
     }
     const expected = Buffer.from(this.data.pin.hash, 'base64');
-    const actual = await hashPin(pin, Buffer.from(this.data.pin.salt, 'base64'));
+    const actual = await this.hashPin(pin, Buffer.from(this.data.pin.salt, 'base64'));
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   }
 
@@ -81,7 +91,7 @@ export class AuthStore {
     let stored: AuthData['pin'] = null;
     if (pin !== null) {
       const salt = randomBytes(16);
-      stored = { salt: salt.toString('base64'), hash: (await hashPin(pin, salt)).toString('base64') };
+      stored = { salt: salt.toString('base64'), hash: (await this.hashPin(pin, salt)).toString('base64') };
     }
     this.data = { ...this.data, pin: stored, version: this.data.version + 1 };
     await this.save();

@@ -72,7 +72,8 @@ async function setup(env: NodeJS.ProcessEnv = {}, { pin = true, loggedIn = true 
   const apprise = new AppriseClient('http://apprise', netFetch);
   const service = new MonitorService({ settings, history: new History(), apprise, fetchImpl: netFetch, log: () => {} });
   const plexAuth = new PlexAuth(() => 'cid', netFetch);
-  const auth = new AuthStore();
+  // A low scrypt cost keeps the many PIN checks here fast (and from timing out when test files run in parallel).
+  const auth = new AuthStore(undefined, { scryptCost: 16 });
   await auth.load();
   const app = createApp({ settings, service, apprise, plexAuth, auth, fetchImpl: netFetch });
 

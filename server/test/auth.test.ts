@@ -4,10 +4,13 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AuthStore, LoginLimiter, SESSION_TTL_MS, sessionValid, sessionValue } from '../src/auth.ts';
 
+/** A low scrypt cost, so the tests run quickly. */
+const FAST = { scryptCost: 16 };
+
 describe('AuthStore', () => {
   it('starts without a PIN, stores only a hash, and persists a set PIN', async () => {
     const file = path.join(await mkdtemp(path.join(tmpdir(), 'pv-auth-')), 'auth.json');
-    const auth = new AuthStore(file);
+    const auth = new AuthStore(file, FAST);
     await auth.load();
     expect(auth.pinSet).toBe(false);
     expect(await auth.verify('')).toBe(false);
@@ -19,7 +22,7 @@ describe('AuthStore', () => {
     const stored = await readFile(file, 'utf8');
     expect(stored).not.toContain('482913');
 
-    const reloaded = new AuthStore(file);
+    const reloaded = new AuthStore(file, FAST);
     await reloaded.load();
     expect(reloaded.pinSet).toBe(true);
     expect(await reloaded.verify('482913')).toBe(true);
@@ -36,7 +39,7 @@ describe('AuthStore', () => {
     // Deleting the file removes the PIN.
     await auth.setPin('482913');
     await rm(file);
-    const reset = new AuthStore(file);
+    const reset = new AuthStore(file, FAST);
     await reset.load();
     expect(reset.pinSet).toBe(false);
   });
