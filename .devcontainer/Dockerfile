@@ -3,7 +3,10 @@
 #
 # The build context is this directory only; nothing from the repository is
 # copied in. The app itself is installed by postCreateCommand (npm ci).
-FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04@sha256:d94c97dd9cacf183d0a6fd12a8e87b526e9e928307674ae9c94139139c0c6eae
+#
+# The base image is pinned by digest. It was mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+# when pinned; to update, pull that tag and copy its digest here.
+FROM mcr.microsoft.com/devcontainers/base@sha256:d94c97dd9cacf183d0a6fd12a8e87b526e9e928307674ae9c94139139c0c6eae
 
 # GitHub's SSH host key, so the first `git fetch`/`git push` to the
 # git@github.com remote doesn't stop at a host-key prompt. The key is
