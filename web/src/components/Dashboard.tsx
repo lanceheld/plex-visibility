@@ -147,6 +147,21 @@ function Timeline({ segments, now }: Readonly<{ segments: Segment[]; now: number
   const span = WINDOWS[win];
   const from = now - span;
   const visible = segments.filter((s) => Date.parse(s.end) >= from);
+  const bars = visible.map((segment, i) => {
+    const start = Math.max(Date.parse(segment.start), from);
+    const next = visible[i + 1];
+    // Extend each segment to the next check so consecutive segments touch.
+    const end = Math.min(
+      next && Date.parse(next.start) - Date.parse(segment.end) < 10 * 60_000
+        ? Date.parse(next.start)
+        : Date.parse(segment.end) + 60_000,
+      now,
+    );
+    // Keep very short (e.g. brand-new) stretches visible inside the track.
+    const width = Math.max(((end - start) / span) * 100, 0.4);
+    const left = Math.min(((start - from) / span) * 100, 100 - width);
+    return { segment, start, end, left, width };
+  });
 
   return (
     <Card
@@ -171,19 +186,7 @@ function Timeline({ segments, now }: Readonly<{ segments: Segment[]; now: number
       }
     >
       <div className="relative h-10 overflow-hidden rounded-lg bg-slate-200/70 dark:bg-slate-800/70">
-        {visible.map((s, i) => {
-          const start = Math.max(Date.parse(s.start), from);
-          const next = visible[i + 1];
-          // Extend each segment to the next check so consecutive segments touch.
-          const end = Math.min(
-            next && Date.parse(next.start) - Date.parse(s.end) < 10 * 60_000
-              ? Date.parse(next.start)
-              : Date.parse(s.end) + 60_000,
-            now,
-          );
-          // Keep very short (e.g. brand-new) stretches visible inside the track.
-          const width = Math.max(((end - start) / span) * 100, 0.4);
-          const left = Math.min(((start - from) / span) * 100, 100 - width);
+        {bars.map(({ segment: s, left, width }) => {
           const meta = STATE_META[s.state];
           return (
             <div
@@ -195,11 +198,66 @@ function Timeline({ segments, now }: Readonly<{ segments: Segment[]; now: number
           );
         })}
       </div>
+      {/* A disc under each problem bar, so short outages are easy to spot and hover. */}
+      <div className="relative mt-1.5 h-3">
+        {bars
+          .filter(({ segment: s }) => s.state !== 'ok' && s.state !== 'unconfigured')
+          .map(({ segment: s, left, width, end }) => (
+            <OutageDisc key={s.start} segment={s} center={left + width / 2} end={end} />
+          ))}
+      </div>
       <div className="mt-2 flex justify-between text-xs text-slate-500 dark:text-slate-400">
         <span>{win === '24h' ? '24 hours ago' : '7 days ago'}</span>
         <span>now</span>
       </div>
     </Card>
+  );
+}
+
+/** Text that reads on each tone's solid colour. */
+const ON_TONE = { ok: 'text-white', bad: 'text-white', warn: 'text-amber-950', idle: 'text-white' } as const;
+
+/**
+ * A disc in the bar's colour, under its middle. Hovering or focusing it opens it
+ * into a callout with the state, when it started, and how long it lasted.
+ */
+function OutageDisc({ segment, center, end }: Readonly<{ segment: Segment; center: number; end: number }>) {
+  const meta = STATE_META[segment.state];
+  const tone = meta.tone;
+  // The real start and length, even when the window cuts off the bar.
+  const when = `${dateTime(segment.start)} · ${duration(end - Date.parse(segment.start))}`;
+  // Open towards the middle near the edges, so the callout stays inside the card.
+  let anchor = '-translate-x-1/2 origin-top';
+  if (center < 15) {
+    anchor = '-translate-x-1.5 origin-top-left';
+  } else if (center > 85) {
+    anchor = '-translate-x-[calc(100%-0.375rem)] origin-top-right';
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`${meta.label}, ${when}`}
+      className="group absolute top-0 size-3 -translate-x-1/2 rounded-full outline-none hover:z-10 focus-visible:z-10"
+      style={{ left: `${center}%` }}
+    >
+      <span
+        className={cx(
+          'absolute inset-0 rounded-full ring-2 ring-white transition-transform group-hover:scale-125 dark:ring-slate-900',
+          TONE[tone].bg,
+        )}
+      />
+      <span
+        className={cx(
+          'pointer-events-none absolute top-0 left-1/2 scale-0 rounded-xl px-3 py-1.5 text-left whitespace-nowrap opacity-0 shadow-lg transition duration-150 ease-out group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100',
+          anchor,
+          TONE[tone].bg,
+          ON_TONE[tone],
+        )}
+      >
+        <span className="block text-xs font-semibold">{meta.label}</span>
+        <span className="block text-[11px] tabular-nums opacity-90">{when}</span>
+      </span>
+    </button>
   );
 }
 
