@@ -98,6 +98,13 @@ export interface AuthState {
   mustChangePassword: boolean;
 }
 
+/** Progress of a password recovery through Plex sign-in. */
+export type RecoveryStatus =
+  | { status: 'waiting' }
+  | { status: 'expired' }
+  | { status: 'verified' } // signed in as the server's owner: a new password can be set
+  | { status: 'denied'; error: string };
+
 export interface TestResult {
   id: string;
   label: string;

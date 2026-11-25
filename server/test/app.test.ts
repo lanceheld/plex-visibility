@@ -1,7 +1,7 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, maskUrl } from '../src/app.ts';
 import { AuthStore } from '../src/auth.ts';
 import { History } from '../src/history.ts';
@@ -51,6 +51,11 @@ async function setup(env: NodeJS.ProcessEnv = {}, { loggedIn = true } = {}) {
           connections: [],
         },
       ]);
+    }
+    // The signed-in account (above) owns s1, which is the server at http://plex:32400.
+    if (url.endsWith('/identity')) {
+      const machineIdentifier = url.startsWith('http://plex:32400/') ? 's1' : 'someone-elses';
+      return Response.json({ MediaContainer: { machineIdentifier } });
     }
     if (url.endsWith('/myplex/account')) {
       const token = (init?.headers as Record<string, string>)['X-Plex-Token'];
@@ -264,6 +269,68 @@ describe('admin login', () => {
 
     expect((await ctx.json('POST', '/api/auth/logout', {})).status).toBe(200);
     expect((await ctx.get('/api/settings')).status).toBe(401);
+  });
+});
+
+describe('password recovery', () => {
+  const plex = { PLEX_URL: 'http://plex:32400', PLEX_TOKEN: 'good' };
+
+  it('sets a new password after signing in with Plex as the server owner', async () => {
+    const ctx = await setup({ ...plex, NOTIFY_URLS: 'ntfy://ntfy.sh/alerts' });
+    const otherBrowser = (await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD })).headers.get(
+      'set-cookie',
+    )!;
+    await ctx.json('POST', '/api/auth/logout', {});
+
+    expect(await (await ctx.get('/api/auth/recover')).json()).toEqual({ available: true });
+    const pin = await (await ctx.json('POST', '/api/auth/recover/pin', {})).json();
+    expect(pin).toMatchObject({ id: 9, authUrl: expect.stringContaining('app.plex.tv') });
+    expect(await (await ctx.get('/api/auth/recover/pin/9')).json()).toEqual({ status: 'verified' });
+
+    // A rejected password doesn't use up the sign-in.
+    const tooShort = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'short' });
+    expect(tooShort.status).toBe(400);
+    const res = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'a brand new password' });
+    expect(await res.json()).toEqual({ authenticated: true, mustChangePassword: false });
+    expect((await ctx.get('/api/settings')).status).toBe(200);
+    expect(await ctx.auth.verify('a brand new password')).toBe(true);
+    await vi.waitFor(() =>
+      expect(ctx.sent).toContainEqual(expect.objectContaining({ title: 'Plex Visibility admin password reset' })),
+    );
+
+    // Other sessions end, and the sign-in can't be used again.
+    ctx.setCookie(otherBrowser.split(';')[0]!);
+    expect((await ctx.get('/api/settings')).status).toBe(401);
+    const again = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'yet another password' });
+    expect(again.status).toBe(410);
+  });
+
+  it("refuses accounts that don't own the monitored server", async () => {
+    const ctx = await setup({ ...plex, PLEX_URL: 'http://not-mine:32400' }, { loggedIn: false });
+    await ctx.json('POST', '/api/auth/recover/pin', {});
+    const status = await (await ctx.get('/api/auth/recover/pin/9')).json();
+    expect(status).toMatchObject({ status: 'denied', error: expect.stringContaining("doesn't own") });
+    const res = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'a brand new password' });
+    expect(res.status).toBe(410);
+    expect(await ctx.auth.verify('admin')).toBe(true);
+  });
+
+  it("ignores PINs it didn't start, such as a Settings sign-in", async () => {
+    const ctx = await setup(plex);
+    await ctx.json('POST', '/api/plex/pin', {});
+    await ctx.json('POST', '/api/auth/logout', {});
+    expect(await (await ctx.get('/api/auth/recover/pin/9')).json()).toEqual({ status: 'expired' });
+    expect((await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'a brand new password' })).status).toBe(410);
+
+    // ...and leaves that sign-in working.
+    await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD });
+    expect(await (await ctx.get('/api/plex/pin/9')).json()).toMatchObject({ status: 'authorized' });
+  });
+
+  it('is unavailable until a Plex server is set up', async () => {
+    const ctx = await setup({}, { loggedIn: false });
+    expect(await (await ctx.get('/api/auth/recover')).json()).toEqual({ available: false });
+    expect((await ctx.json('POST', '/api/auth/recover/pin', {})).status).toBe(409);
   });
 });
 

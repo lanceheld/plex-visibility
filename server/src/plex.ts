@@ -108,3 +108,32 @@ export async function fetchStatus(opts: FetchOptions): Promise<RemoteStatus> {
     return fail('server_down', `Unexpected response from Plex: ${(err as Error).message}`);
   }
 }
+
+/**
+ * The server's machine identifier, from `GET /identity`. It matches the
+ * `clientIdentifier` plex.tv lists for the server among an account's resources.
+ */
+export async function fetchMachineId(opts: FetchOptions): Promise<string> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await doFetch(`${opts.url.replace(/\/+$/, '')}/identity`, {
+      headers: { ...PLEX_HEADERS, 'X-Plex-Token': opts.token, 'X-Plex-Client-Identifier': opts.clientId },
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
+    });
+  } catch (err) {
+    const cause = err instanceof Error ? ((err.cause as Error | undefined)?.message ?? err.message) : String(err);
+    throw new Error(`Could not connect to Plex at ${opts.url}: ${cause}`);
+  }
+  if (!response.ok) {
+    throw new Error(`Plex returned HTTP ${response.status}`);
+  }
+  const body = await response.text();
+  const id = (response.headers.get('content-type') ?? '').includes('json')
+    ? str((JSON.parse(body) as { MediaContainer?: Account }).MediaContainer?.machineIdentifier)
+    : body.match(/\bmachineIdentifier="([^"]+)"/)?.[1];
+  if (!id) {
+    throw new Error('Plex did not report a machine identifier');
+  }
+  return id;
+}

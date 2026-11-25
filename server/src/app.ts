@@ -8,6 +8,7 @@ import { type AuthStore, LoginLimiter, SESSION_COOKIE, SESSION_TTL_MS, sessionVa
 import type { AppriseClient } from './notify.ts';
 import { fetchStatus } from './plex.ts';
 import type { PlexAuth } from './plexAuth.ts';
+import { PasswordRecovery } from './recovery.ts';
 import type { MonitorService } from './service.ts';
 import {
   exportConfig,
@@ -87,13 +88,16 @@ const testMessage = {
   body: 'If you can read this, Plex remote access alerts will reach you here.',
 } as const;
 
-/** Routes anyone can use: the read-only status page and logging in. */
+/** Routes anyone can use: the read-only status page, logging in, and password recovery. */
 const PUBLIC_API = new Set(['/api/status', '/api/check', '/api/auth', '/api/auth/login', '/api/auth/logout']);
+const RECOVER = '/api/auth/recover';
+const isPublic = (path: string) => PUBLIC_API.has(path) || path === RECOVER || path.startsWith(`${RECOVER}/`);
 
 export function createApp(deps: AppDeps): Hono {
   const { settings, service, apprise, plexAuth, auth } = deps;
   const app = new Hono();
   const limiter = new LoginLimiter();
+  const recovery = new PasswordRecovery(plexAuth, settings, deps.fetchImpl);
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
@@ -134,7 +138,7 @@ export function createApp(deps: AppDeps): Hono {
 
   // Everything except the public routes needs an admin session, and a changed default password.
   app.use('/api/*', async (c, next) => {
-    if (PUBLIC_API.has(c.req.path)) {
+    if (isPublic(c.req.path)) {
       return next();
     }
     if (!(await isLoggedIn(c))) {
@@ -184,6 +188,39 @@ export function createApp(deps: AppDeps): Hono {
     await auth.setPassword(next);
     // The new password version signs out other sessions; keep this one.
     await startSession(c);
+    return c.json({ authenticated: true, mustChangePassword: false });
+  });
+
+  // --- password recovery: sign in with Plex as the owner of the monitored server ---
+  app.get(RECOVER, (c) => c.json({ available: recovery.available }));
+
+  app.post(`${RECOVER}/pin`, async (c) => c.json(await recovery.start()));
+
+  app.get(`${RECOVER}/pin/:id`, async (c) => c.json(await recovery.check(Number(c.req.param('id')))));
+
+  app.post(RECOVER, async (c) => {
+    const { pinId, next } = await body(c, z.object({ pinId: z.number(), next: z.string().max(1024) }));
+    if (!recovery.verified(pinId)) {
+      throw new HTTPException(410, { message: 'Sign-in expired. Please sign in with Plex again.' });
+    }
+    const problem = await auth.checkNewPassword(next);
+    if (problem) {
+      return c.json({ error: problem }, 400);
+    }
+    recovery.drop(pinId);
+    await auth.setPassword(next);
+    // As with a change, the new password version signs out every other session.
+    await startSession(c);
+    console.log(`Admin password reset by signing in with Plex (from ${clientAddress(c)})`);
+    const targets = settings.get().notifications.targets.filter((t) => t.enabled);
+    void apprise
+      .notifyAll(
+        targets,
+        'Plex Visibility admin password reset',
+        "The admin password was reset by signing in with the Plex server owner's account. If this wasn't you, sign in to Plex and change your Plex password, then reset the admin password again.",
+        'warning',
+      )
+      .catch((err: Error) => console.error(`Could not send the password reset notice: ${err.message}`));
     return c.json({ authenticated: true, mustChangePassword: false });
   });
 

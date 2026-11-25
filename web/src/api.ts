@@ -3,6 +3,7 @@ import type {
   ConfigExport,
   PinStatus,
   PublicSettings,
+  RecoveryStatus,
   RemoteStatus,
   ServiceInfo,
   SettingsUpdate,
@@ -37,6 +38,10 @@ export const api = {
   logout: () => request<AuthState>('POST', '/api/auth/logout', {}),
   changePassword: (current: string, next: string) =>
     request<AuthState>('POST', '/api/auth/password', { current, next }),
+  recoveryAvailable: () => request<{ available: boolean }>('GET', '/api/auth/recover'),
+  startRecovery: () => request<{ id: number; authUrl: string }>('POST', '/api/auth/recover/pin', {}),
+  checkRecovery: (id: number) => request<RecoveryStatus>('GET', `/api/auth/recover/pin/${id}`),
+  recover: (pinId: number, next: string) => request<AuthState>('POST', '/api/auth/recover', { pinId, next }),
   status: () => request<StatusResponse>('GET', '/api/status'),
   checkNow: () => request<StatusResponse>('POST', '/api/check', {}),
   settings: () => request<PublicSettings>('GET', '/api/settings'),

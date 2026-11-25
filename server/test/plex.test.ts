@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchStatus, parseAccount } from '../src/plex.ts';
+import { fetchMachineId, fetchStatus, parseAccount } from '../src/plex.ts';
 
 describe('parseAccount', () => {
   it('treats mapped as reachable', () => {
@@ -65,5 +65,33 @@ describe('fetchStatus', () => {
 
   it('is unconfigured without a URL or token', async () => {
     expect((await fetchStatus({ ...opts, token: '' })).state).toBe('unconfigured');
+  });
+});
+
+describe('fetchMachineId', () => {
+  const opts = { url: 'http://plex:32400/', token: 't', clientId: 'c' };
+  const respond = (body: string, init?: ResponseInit) =>
+    (async (url: string) => {
+      expect(url).toBe('http://plex:32400/identity');
+      return new Response(body, init);
+    }) as unknown as typeof fetch;
+
+  it('reads JSON or XML', async () => {
+    const json = JSON.stringify({ MediaContainer: { machineIdentifier: 'abc' } });
+    const jsonFetch = respond(json, { headers: { 'content-type': 'application/json' } });
+    expect(await fetchMachineId({ ...opts, fetchImpl: jsonFetch })).toBe('abc');
+    const xml = '<MediaContainer size="0" claimed="1" machineIdentifier="def" version="1.4"/>';
+    expect(await fetchMachineId({ ...opts, fetchImpl: respond(xml) })).toBe('def');
+  });
+
+  it('fails on errors and missing identifiers', async () => {
+    await expect(fetchMachineId({ ...opts, fetchImpl: respond('', { status: 500 }) })).rejects.toThrow('HTTP 500');
+    await expect(fetchMachineId({ ...opts, fetchImpl: respond('<MediaContainer/>') })).rejects.toThrow(
+      'machine identifier',
+    );
+    const down = (async () => {
+      throw new Error('fetch failed', { cause: new Error('ECONNREFUSED') });
+    }) as unknown as typeof fetch;
+    await expect(fetchMachineId({ ...opts, fetchImpl: down })).rejects.toThrow('ECONNREFUSED');
   });
 });

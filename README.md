@@ -31,7 +31,8 @@ Settings and everything that changes them need the admin password. The status pa
 
 - The password is stored as a scrypt hash in `/config/plex-visibility/auth.json`. Changing it signs out all other browsers.
 - Repeated wrong passwords from one address are locked out for a while.
-- **Forgot it?** Stop the container, delete `config/plex-visibility/auth.json`, and start it again. The password goes back to `admin`.
+- **Forgot it?** Choose **Forgot password?** on the login screen and sign in with the Plex account that owns the monitored server, then set a new password. Shared users of the server can't do this. Your enabled notification destinations get a message when the password is reset this way.
+- **No Plex server set up, or no access to the owner's account?** Stop the container, delete `config/plex-visibility/auth.json`, and start it again. The password goes back to `admin`.
 
 ## How it works
 
