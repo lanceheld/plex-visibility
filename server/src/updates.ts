@@ -36,24 +36,36 @@ export function compareVersions(a: Version, b: Version): number {
       return d;
     }
   }
+  return comparePreRelease(a.pre, b.pre);
+}
+
+function comparePreRelease(a: string[], b: string[]): number {
   // A pre-release is older than its release.
-  if (!a.pre.length || !b.pre.length) {
-    return b.pre.length - a.pre.length;
+  if (!a.length || !b.length) {
+    return b.length - a.length;
   }
-  for (let i = 0; i < Math.min(a.pre.length, b.pre.length); i++) {
-    const [x, y] = [a.pre[i]!, b.pre[i]!];
-    const [xn, yn] = [/^\d+$/.test(x), /^\d+$/.test(y)];
-    if (xn && yn) {
-      if (Number(x) !== Number(y)) {
-        return Number(x) - Number(y);
-      }
-    } else if (xn !== yn) {
-      return xn ? -1 : 1;
-    } else if (x !== y) {
-      return x < y ? -1 : 1;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    const d = compareIdentifier(a[i]!, b[i]!);
+    if (d !== 0) {
+      return d;
     }
   }
-  return a.pre.length - b.pre.length;
+  return a.length - b.length;
+}
+
+/** Numbers compare numerically and sort before words, which compare as text. */
+function compareIdentifier(x: string, y: string): number {
+  const [xn, yn] = [/^\d+$/.test(x), /^\d+$/.test(y)];
+  if (xn && yn) {
+    return Number(x) - Number(y);
+  }
+  if (xn !== yn) {
+    return xn ? -1 : 1;
+  }
+  if (x === y) {
+    return 0;
+  }
+  return x < y ? -1 : 1;
 }
 
 export interface UpdateCheckerOptions {
@@ -89,7 +101,7 @@ export class UpdateChecker {
 
   start(): void {
     if (this.enabled && !this.timer) {
-      void this.schedule(0);
+      this.schedule(0);
     }
   }
 

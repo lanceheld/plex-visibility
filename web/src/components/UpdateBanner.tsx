@@ -6,6 +6,8 @@ import { api, type UpdateInfo } from '../api.ts';
 const DISMISSED_KEY = 'dismissedUpdate';
 /** The server checks GitHub twice a day; asking it hourly picks that up without a reload. */
 const POLL_MS = 60 * 60 * 1000;
+/** Only a version number is stored, never whatever else the response might hold. */
+const VERSION = /^\d{1,9}\.\d{1,9}\.\d{1,9}(?:-[0-9A-Za-z.-]{1,64})?$/;
 
 export function UpdateBanner() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
@@ -23,16 +25,16 @@ export function UpdateBanner() {
     return null;
   }
 
+  const latest = info.latest;
   const dismiss = () => {
-    localStorage.setItem(DISMISSED_KEY, info.latest!);
-    setDismissed(info.latest);
+    if (VERSION.test(latest)) {
+      localStorage.setItem(DISMISSED_KEY, latest);
+    }
+    setDismissed(latest);
   };
 
   return (
-    <div
-      role="status"
-      className="mb-4 flex items-center gap-2 rounded-xl bg-sky-500/10 px-4 py-3 text-sm text-sky-800 ring-1 ring-sky-500/30 ring-inset dark:text-sky-200"
-    >
+    <output className="mb-4 flex items-center gap-2 rounded-xl bg-sky-500/10 px-4 py-3 text-sm text-sky-800 ring-1 ring-sky-500/30 ring-inset dark:text-sky-200">
       <CircleArrowUp className="size-4 shrink-0" />
       <span className="grow">
         PLEX Visibility <strong>{info.latest}</strong> is available. You're running {info.current}.
@@ -56,6 +58,6 @@ export function UpdateBanner() {
       >
         <X className="size-4" />
       </button>
-    </div>
+    </output>
   );
 }

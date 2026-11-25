@@ -52,9 +52,21 @@ ENV \
     NODE_ENV=production \
     APP_VERSION=${VERSION}
 
+# The apprise base image's labels are inherited, so every one it sets is
+# replaced here: otherwise a local build would claim apprise-api's version,
+# revision, URL and MIT license. Release builds get version, revision and
+# created from docker/metadata-action, which take precedence over these.
 LABEL org.opencontainers.image.title="plex-visibility" \
       org.opencontainers.image.description="Monitors Plex Media Server remote access and alerts when it is not reachable" \
-      org.opencontainers.image.source="https://github.com/lanceheld/plex-visibility"
+      org.opencontainers.image.source="https://github.com/lanceheld/plex-visibility" \
+      org.opencontainers.image.url="https://github.com/lanceheld/plex-visibility" \
+      org.opencontainers.image.documentation="https://github.com/lanceheld/plex-visibility#readme" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="" \
+      org.opencontainers.image.created="" \
+      org.opencontainers.image.licenses="" \
+      maintainer="" \
+      build_version=""
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
