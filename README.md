@@ -94,7 +94,7 @@ If Plex Visibility is useful to you, you can support its development with a dona
 
 ## Development
 
-Requires Node 22+.
+Requires Node 22+. Or open the repository in its dev container (VS Code: **Dev Containers: Reopen in Container**), which has Node, Docker, Claude Code and the GitHub CLI, and runs `npm ci` on creation. Run `claude` and `gh auth login` once inside to sign in; both logins are kept across rebuilds.
 
 ```sh
 npm install
