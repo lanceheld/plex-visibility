@@ -43,7 +43,7 @@ export class PinRecovery {
   async start(): Promise<{ id: number; authUrl: string }> {
     if (!this.available) {
       throw new HTTPException(409, {
-        message: 'No Plex server is set up, so removing the PIN with Plex is not available',
+        message: 'No PLEX server is set up, so removing the PIN with PLEX is not available',
       });
     }
     const cutoff = Date.now() - PIN_TTL_MS;
@@ -89,7 +89,7 @@ export class PinRecovery {
       });
     } catch (err) {
       throw new HTTPException(502, {
-        message: `Can't confirm who owns the Plex server: ${(err as Error).message}`,
+        message: `Can't confirm who owns the PLEX server: ${(err as Error).message}`,
       });
     }
     if (pin.servers.some((server) => server.id === machineId && server.owned)) {
@@ -97,8 +97,8 @@ export class PinRecovery {
       return { status: 'verified' };
     }
     this.drop(id);
-    const name = s.plex.serverName || 'the monitored Plex server';
-    return { status: 'denied', error: `That Plex account doesn't own ${name}. Sign in with the owner's account.` };
+    const name = s.plex.serverName || 'the monitored PLEX server';
+    return { status: 'denied', error: `That PLEX account doesn't own ${name}. Sign in with the owner's account.` };
   }
 
   /** Whether this plex.tv PIN's account was confirmed as the server owner and the PIN hasn't been used. */

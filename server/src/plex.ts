@@ -84,7 +84,7 @@ export async function fetchStatus(opts: FetchOptions): Promise<RemoteStatus> {
   const checkedAt = new Date().toISOString();
   const fail = (state: RemoteStatus['state'], detail: string): RemoteStatus => ({ state, detail, checkedAt });
   if (!opts.url || !opts.token) {
-    return fail('unconfigured', 'No Plex server has been set up yet');
+    return fail('unconfigured', 'No PLEX server has been set up yet');
   }
 
   const doFetch = opts.fetchImpl ?? fetch;
@@ -96,19 +96,19 @@ export async function fetchStatus(opts: FetchOptions): Promise<RemoteStatus> {
     });
   } catch (err) {
     const cause = err instanceof Error ? ((err.cause as Error | undefined)?.message ?? err.message) : String(err);
-    return fail('server_down', `Could not connect to Plex at ${opts.url}: ${cause}`);
+    return fail('server_down', `Could not connect to PLEX at ${opts.url}: ${cause}`);
   }
 
   if (response.status === 401 || response.status === 403) {
-    return fail('auth_error', `Plex rejected the token (HTTP ${response.status}). Sign in again in Settings.`);
+    return fail('auth_error', `PLEX rejected the token (HTTP ${response.status}). Sign in again in Settings.`);
   }
   if (!response.ok) {
-    return fail('server_down', `Plex returned HTTP ${response.status}`);
+    return fail('server_down', `PLEX returned HTTP ${response.status}`);
   }
   try {
     return parseAccount(decode(await response.text(), response.headers.get('content-type') ?? ''), new Date(checkedAt));
   } catch (err) {
-    return fail('server_down', `Unexpected response from Plex: ${(err as Error).message}`);
+    return fail('server_down', `Unexpected response from PLEX: ${(err as Error).message}`);
   }
 }
 
@@ -126,17 +126,17 @@ export async function fetchMachineId(opts: FetchOptions): Promise<string> {
     });
   } catch (err) {
     const cause = err instanceof Error ? ((err.cause as Error | undefined)?.message ?? err.message) : String(err);
-    throw new Error(`Could not connect to Plex at ${opts.url}: ${cause}`);
+    throw new Error(`Could not connect to PLEX at ${opts.url}: ${cause}`);
   }
   if (!response.ok) {
-    throw new Error(`Plex returned HTTP ${response.status}`);
+    throw new Error(`PLEX returned HTTP ${response.status}`);
   }
   const body = await response.text();
   const id = (response.headers.get('content-type') ?? '').includes('json')
     ? str((JSON.parse(body) as { MediaContainer?: Account }).MediaContainer?.machineIdentifier)
     : /\bmachineIdentifier="([^"]+)"/.exec(body)?.[1];
   if (!id) {
-    throw new Error('Plex did not report a machine identifier');
+    throw new Error('PLEX did not report a machine identifier');
   }
   return id;
 }

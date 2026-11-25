@@ -6,6 +6,7 @@ import { Dashboard } from './components/Dashboard.tsx';
 import { HeartbeatCard, MonitoringCard } from './components/MonitoringCard.tsx';
 import { NotificationsCard } from './components/Notifications.tsx';
 import { PlexCard } from './components/PlexCard.tsx';
+import { UpdateBanner } from './components/UpdateBanner.tsx';
 import { AppearanceCard } from './components/AppearanceCard.tsx';
 import { BackupCard } from './components/BackupCard.tsx';
 import { cx, useAction } from './components/ui.tsx';
@@ -122,7 +123,7 @@ export function App() {
       <header className="flex items-center justify-between py-5">
         <a href="#/" className="flex items-center gap-2.5 font-semibold tracking-tight">
           <img src="/favicon.svg" alt="" className="size-8" />
-          <span>Plex Visibility</span>
+          <span>PLEX Visibility</span>
         </a>
         <nav className="flex items-center gap-1 rounded-xl bg-slate-200/60 p-1 dark:bg-slate-800/60">
           <NavButton active={page === 'dashboard'} onClick={() => go('dashboard')}>
@@ -147,6 +148,7 @@ export function App() {
         </nav>
       </header>
 
+      <UpdateBanner />
       {error && (
         <div className="mb-4 flex items-center gap-2 rounded-xl bg-rose-500/10 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-500/30 ring-inset dark:text-rose-300">
           <TriangleAlert className="size-4" /> Can't reach the monitor: {error}
@@ -183,7 +185,7 @@ function Footer({ version }: Readonly<{ version: string }>) {
   }
   return (
     <footer className="mt-10 flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-      <span>Plex Visibility</span>
+      <span>PLEX Visibility</span>
       <a
         href={href}
         target="_blank"

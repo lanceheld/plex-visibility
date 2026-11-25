@@ -66,7 +66,7 @@ export function Dashboard({
             </div>
             <div>
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                {status.serverName || 'Plex Media Server'}
+                {status.serverName || 'PLEX Media Server'}
               </p>
               <h1 className={cx('text-2xl font-bold tracking-tight sm:text-3xl', tone.text)}>{meta.label}</h1>
               <p className="mt-1 max-w-xl text-sm text-slate-600 dark:text-slate-300">

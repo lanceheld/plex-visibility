@@ -93,6 +93,19 @@ export interface StatusResponse {
   enabledTargets: number;
 }
 
+/** Whether a newer release than the running one is on GitHub. */
+export interface UpdateInfo {
+  /** False for development builds, or when update checks are turned off. */
+  enabled: boolean;
+  current: string;
+  /** The latest published release, once GitHub has answered. */
+  latest: string | null;
+  /** Its release notes page. */
+  url: string | null;
+  available: boolean;
+  checkedAt: string | null;
+}
+
 export interface AuthState {
   /** Whether Settings are protected by a PIN. */
   pinSet: boolean;

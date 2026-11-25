@@ -202,8 +202,8 @@ function RecoverCard({ onLoggedIn, onCancel }: Readonly<{ onLoggedIn: (a: AuthSt
               <h1 className="text-lg font-semibold">Forgot PIN</h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 {available === false
-                  ? 'Removing the PIN with Plex works once a Plex server is set up.'
-                  : 'Sign in with the Plex account that owns the monitored server to remove the PIN.'}
+                  ? 'Removing the PIN with PLEX works once a PLEX server is set up.'
+                  : 'Sign in with the PLEX account that owns the monitored server to remove the PIN.'}
               </p>
             </div>
           </div>
@@ -212,7 +212,7 @@ function RecoverCard({ onLoggedIn, onCancel }: Readonly<{ onLoggedIn: (a: AuthSt
             <div className="space-y-2">
               <Button variant="primary" className="w-full" onClick={signIn} busy={busy === 'pin' || waiting}>
                 {!waiting && <LogIn className="size-4" />}
-                {waiting ? 'Waiting for Plex…' : 'Sign in with Plex'}
+                {waiting ? 'Waiting for PLEX…' : 'Sign in with PLEX'}
               </Button>
               {waiting && (
                 <Button variant="ghost" className="w-full" onClick={() => setWaitingFor(null)}>
@@ -314,7 +314,7 @@ export function SecurityCard({
       description={
         auth.pinSet
           ? 'Settings are protected by a PIN. Changing or removing it signs out other browsers.'
-          : 'Settings are not protected. Anyone who can open this page can change them, or download a backup that includes your Plex token. Set a PIN to require it for Settings.'
+          : 'Settings are not protected. Anyone who can open this page can change them, or download a backup that includes your PLEX token. Set a PIN to require it for Settings.'
       }
       actions={
         auth.pinSet && (

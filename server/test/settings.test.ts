@@ -26,7 +26,7 @@ describe('migrate', () => {
   });
 
   it('refuses newer formats, unknown versions, and gaps in the chain', () => {
-    expect(() => migrate({}, 4, migrations, 3)).toThrow(/newer version of Plex Visibility.*Update Plex Visibility/);
+    expect(() => migrate({}, 4, migrations, 3)).toThrow(/newer version of PLEX Visibility.*Update PLEX Visibility/);
     expect(() => migrate({}, 0, migrations, 3)).toThrow(SettingsVersionError);
     expect(() => migrate({}, Number.NaN, migrations, 3)).toThrow(/Unknown settings format/);
     expect(() => migrate({}, 1, { 1: migrations[1] }, 3)).toThrow(/No migration from settings format 2 to 3/);
@@ -71,7 +71,7 @@ describe('SettingsStore format version', () => {
     const file = await tempFile();
     const newer = JSON.stringify({ ...defaultSettings(), schemaVersion: SCHEMA_VERSION + 1 });
     await writeFile(file, newer);
-    await expect(new SettingsStore(file).load({})).rejects.toThrow(/newer version of Plex Visibility/);
+    await expect(new SettingsStore(file).load({})).rejects.toThrow(/newer version of PLEX Visibility/);
     expect(await readFile(file, 'utf8')).toBe(newer);
   });
 });

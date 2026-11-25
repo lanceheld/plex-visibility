@@ -117,6 +117,7 @@ Most people won't need anything in this section.
 | `TZ`            | `Etc/UTC` | Your time zone, used for times in the logs.                                            |
 | `PUID` / `PGID` | `1000`    | The user and group Plex Visibility runs as, so the files in `config` are owned by you. |
 | `PORT`          | `8080`    | The port the web page uses inside the container.                                       |
+| `UPDATE_CHECK`  | `true`    | Set to `false` to stop checking GitHub for new releases.                               |
 
 To open the web page on a different port, change the left-hand number under `ports` (for example `'9090:8080'`).
 
@@ -147,6 +148,8 @@ The container runs two things:
 - **[Apprise](https://github.com/caronc/apprise-api)**: the open-source tool that sends notifications to all those services. It's only reachable from inside the container.
 
 ## Updating and choosing a version
+
+Plex Visibility checks GitHub for new releases twice a day. When one is out, a banner at the top of the page links to its release notes. Dismissing the banner hides it until the next release.
 
 To update to the newest release, from the folder with `docker-compose.yml` run:
 
