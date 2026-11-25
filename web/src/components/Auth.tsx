@@ -1,26 +1,59 @@
-import { ArrowLeft, KeyRound, LockKeyhole, LogIn, LogOut } from 'lucide-react';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, KeyRound, LockKeyhole, LockKeyholeOpen, LogIn, LogOut } from 'lucide-react';
+import { type FormEvent, type InputHTMLAttributes, useEffect, useRef, useState } from 'react';
 import { api, type AuthState } from '../api.ts';
-import { Button, Card, Field, Input, useAction, useToast } from './ui.tsx';
+import { Button, Card, Field, Input, cx, useAction, useToast } from './ui.tsx';
 
-const MIN_LENGTH = 8; // keep in sync with MIN_PASSWORD_LENGTH in server/src/auth.ts
+const PIN_LENGTH = 6; // keep in sync with PIN_LENGTH in server/src/auth.ts
+const complete = (pin: string) => pin.length === PIN_LENGTH;
+
+/** A masked, digits-only PIN field. */
+function PinInput({
+  value,
+  onChange,
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string;
+  onChange: (pin: string) => void;
+}) {
+  return (
+    <Input
+      type="password"
+      inputMode="numeric"
+      autoComplete="off"
+      maxLength={PIN_LENGTH}
+      pattern={`\\d{${PIN_LENGTH}}`}
+      placeholder={'•'.repeat(PIN_LENGTH)}
+      value={value}
+      onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, PIN_LENGTH))}
+      className={cx('text-center font-mono tracking-[0.5em]', className)}
+      {...props}
+    />
+  );
+}
 
 export function LoginCard({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }) {
   const { busy, run } = useAction();
-  const [password, setPassword] = useState('');
+  const [pin, setPin] = useState('');
   const [recovering, setRecovering] = useState(false);
 
   if (recovering) {
     return <RecoverCard onLoggedIn={onLoggedIn} onCancel={() => setRecovering(false)} />;
   }
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const result = await run('login', () => api.login(password));
+  const login = async (value: string) => {
+    const result = await run('login', () => api.login(value));
     if (result) {
       onLoggedIn(result);
     } else {
-      setPassword('');
+      setPin('');
+    }
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (complete(pin)) {
+      void login(pin);
     }
   };
 
@@ -33,23 +66,24 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }
               <LockKeyhole className="size-6" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">Admin login</h1>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Settings are password protected.</p>
+              <h1 className="text-lg font-semibold">Enter PIN</h1>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Settings are protected by a PIN.</p>
             </div>
           </div>
-          {/* Username field for password managers; there is only one admin account. */}
-          <input type="text" name="username" autoComplete="username" value="admin" readOnly hidden />
-          <Field label="Password">
-            <Input
-              type="password"
-              autoFocus
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-          <Button type="submit" variant="primary" className="w-full" busy={busy === 'login'} disabled={!password}>
-            Log in
+          <PinInput
+            aria-label="PIN"
+            autoFocus
+            value={pin}
+            onChange={(next) => {
+              setPin(next);
+              // Submit as soon as the last digit is typed. The field stays enabled so it keeps focus for a retry.
+              if (complete(next) && busy !== 'login') {
+                void login(next);
+              }
+            }}
+          />
+          <Button type="submit" variant="primary" className="w-full" busy={busy === 'login'} disabled={!complete(pin)}>
+            Unlock settings
           </Button>
           <p className="text-center text-xs">
             <button
@@ -57,7 +91,7 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }
               className="text-slate-500 underline hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
               onClick={() => setRecovering(true)}
             >
-              Forgot password?
+              Forgot PIN?
             </button>
           </p>
         </form>
@@ -69,22 +103,18 @@ export function LoginCard({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }
 function ResetByFileHint() {
   return (
     <>
-      Delete <code className="font-mono">plex-visibility/auth.json</code> in the config folder and restart to reset the
-      password to <code className="font-mono">admin</code>.
+      Delete <code className="font-mono">plex-visibility/auth.json</code> in the config folder and restart to remove the
+      PIN.
     </>
   );
 }
 
-type Recovery = { step: 'idle' } | { step: 'waiting'; pinId: number } | { step: 'verified'; pinId: number };
-
-/** Reset the password by signing in with Plex as the owner of the monitored server. */
+/** Remove a forgotten PIN by signing in with Plex as the owner of the monitored server. */
 function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => void; onCancel: () => void }) {
   const toast = useToast();
   const { busy, run } = useAction();
   const [available, setAvailable] = useState<boolean | null>(null);
-  const [flow, setFlow] = useState<Recovery>({ step: 'idle' });
-  const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [waitingFor, setWaitingFor] = useState<number | null>(null);
   const popup = useRef<Window | null>(null);
 
   useEffect(() => {
@@ -94,9 +124,9 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
     );
   }, []);
 
-  // Poll the PIN until the user approves in the plex.tv window.
+  // Poll the plex.tv PIN until the user approves in the plex.tv window, then remove the settings PIN.
   useEffect(() => {
-    if (flow.step !== 'waiting') {
+    if (waitingFor === null) {
       return;
     }
     let cancelled = false;
@@ -105,17 +135,21 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
     const stop = (message: string) => {
       popup.current?.close();
       toast('bad', message);
-      setFlow({ step: 'idle' });
+      setWaitingFor(null);
     };
     const tick = async () => {
       try {
-        const res = await api.checkRecovery(flow.pinId);
+        const res = await api.checkRecovery(waitingFor);
         if (cancelled) {
           return;
         }
         if (res.status === 'verified') {
           popup.current?.close();
-          setFlow({ step: 'verified', pinId: flow.pinId });
+          const result = await api.removePinWithPlex(waitingFor);
+          if (!cancelled) {
+            toast('ok', 'PIN removed. You can set a new one under Security.');
+            onLoggedIn(result);
+          }
         } else if (res.status === 'denied') {
           stop(res.error);
         } else if (res.status === 'expired' || Date.now() - started > 10 * 60_000) {
@@ -134,7 +168,7 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [flow, toast]);
+  }, [waitingFor, toast, onLoggedIn]);
 
   const signIn = async () => {
     // Open the window synchronously so popup blockers allow it, then point it at plex.tv.
@@ -149,28 +183,10 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
     } else {
       window.open(pin.authUrl, '_blank');
     }
-    setFlow({ step: 'waiting', pinId: pin.id });
+    setWaitingFor(pin.id);
   };
 
-  const mismatch = confirm !== '' && next !== confirm;
-  const tooShort = next !== '' && next.length < MIN_LENGTH;
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (flow.step !== 'verified') {
-      return;
-    }
-    const result = await run('reset', () => api.recover(flow.pinId, next), 'Password reset');
-    if (result) {
-      onLoggedIn(result);
-    } else {
-      // A rejected password keeps the sign-in; an expired sign-in means starting over.
-      const status = await api.checkRecovery(flow.pinId).catch(() => null);
-      if (status?.status !== 'verified') {
-        setFlow({ step: 'idle' });
-      }
-    }
-  };
+  const waiting = waitingFor !== null;
 
   return (
     <div className="mx-auto max-w-sm pt-8">
@@ -181,67 +197,30 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
               <KeyRound className="size-6" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold">Reset admin password</h1>
+              <h1 className="text-lg font-semibold">Forgot PIN</h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {flow.step === 'verified'
-                  ? 'Signed in as the server owner. Choose a new password.'
-                  : available === false
-                    ? 'Reset with Plex works once a Plex server is set up.'
-                    : 'Sign in with the Plex account that owns the monitored server.'}
+                {available === false
+                  ? 'Removing the PIN with Plex works once a Plex server is set up.'
+                  : 'Sign in with the Plex account that owns the monitored server to remove the PIN.'}
               </p>
             </div>
           </div>
 
-          {flow.step === 'verified' ? (
-            <form onSubmit={submit} className="space-y-4">
-              <input type="text" name="username" autoComplete="username" value="admin" readOnly hidden />
-              <Field label="New password" hint={tooShort ? `Use at least ${MIN_LENGTH} characters.` : undefined}>
-                <Input
-                  type="password"
-                  autoFocus
-                  autoComplete="new-password"
-                  value={next}
-                  onChange={(e) => setNext(e.target.value)}
-                />
-              </Field>
-              <Field label="Confirm new password" hint={mismatch ? "Passwords don't match." : undefined}>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                />
-              </Field>
-              <Button
-                type="submit"
-                variant="primary"
-                className="w-full"
-                busy={busy === 'reset'}
-                disabled={!next || next !== confirm || next.length < MIN_LENGTH}
-              >
-                Set password and log in
-              </Button>
-            </form>
-          ) : available ? (
+          {available && (
             <div className="space-y-2">
-              <Button
-                variant="primary"
-                className="w-full"
-                onClick={signIn}
-                busy={busy === 'pin' || flow.step === 'waiting'}
-              >
-                {flow.step !== 'waiting' && <LogIn className="size-4" />}
-                {flow.step === 'waiting' ? 'Waiting for Plex…' : 'Sign in with Plex'}
+              <Button variant="primary" className="w-full" onClick={signIn} busy={busy === 'pin' || waiting}>
+                {!waiting && <LogIn className="size-4" />}
+                {waiting ? 'Waiting for Plex…' : 'Sign in with Plex'}
               </Button>
-              {flow.step === 'waiting' && (
-                <Button variant="ghost" className="w-full" onClick={() => setFlow({ step: 'idle' })}>
+              {waiting && (
+                <Button variant="ghost" className="w-full" onClick={() => setWaitingFor(null)}>
                   Cancel
                 </Button>
               )}
             </div>
-          ) : null}
+          )}
 
-          {available !== null && flow.step === 'idle' && (
+          {available !== null && !waiting && (
             <p className="text-center text-xs text-slate-500 dark:text-slate-400">
               {available ? 'No access to that account? ' : ''}
               <ResetByFileHint />
@@ -249,7 +228,7 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
           )}
 
           <Button variant="ghost" className="w-full" onClick={onCancel}>
-            <ArrowLeft className="size-4" /> Back to login
+            <ArrowLeft className="size-4" /> Back
           </Button>
         </div>
       </Card>
@@ -257,18 +236,18 @@ function RecoverCard({ onLoggedIn, onCancel }: { onLoggedIn: (a: AuthState) => v
   );
 }
 
-function ChangePasswordForm({ onChanged, submitLabel }: { onChanged: (a: AuthState) => void; submitLabel: string }) {
+/** Set a PIN, or change or remove the current one. */
+function PinForm({ pinSet, onChanged }: { pinSet: boolean; onChanged: (a: AuthState) => void }) {
   const { busy, run } = useAction();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
 
-  const mismatch = confirm !== '' && next !== confirm;
-  const tooShort = next !== '' && next.length < MIN_LENGTH;
+  const mismatch = complete(confirm) && next !== confirm;
+  const canSet = complete(next) && next === confirm && (!pinSet || complete(current));
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const result = await run('change', () => api.changePassword(current, next), 'Password changed');
+  const save = async (key: string, value: string | null, success: string) => {
+    const result = await run(key, () => api.setPin(pinSet ? current : undefined, value), success);
     if (result) {
       setCurrent('');
       setNext('');
@@ -277,75 +256,74 @@ function ChangePasswordForm({ onChanged, submitLabel }: { onChanged: (a: AuthSta
     }
   };
 
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (canSet) {
+      void save('set', next, pinSet ? 'PIN changed' : 'PIN set');
+    }
+  };
+
   return (
     <form onSubmit={submit} className="space-y-4">
-      <input type="text" name="username" autoComplete="username" value="admin" readOnly hidden />
-      <Field label="Current password">
-        <Input
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-        />
-      </Field>
-      <Field label="New password" hint={tooShort ? `Use at least ${MIN_LENGTH} characters.` : undefined}>
-        <Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-      </Field>
-      <Field label="Confirm new password" hint={mismatch ? "Passwords don't match." : undefined}>
-        <Input
-          type="password"
-          autoComplete="new-password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-        />
-      </Field>
-      <Button
-        type="submit"
-        variant="primary"
-        busy={busy === 'change'}
-        disabled={!current || !next || next !== confirm || next.length < MIN_LENGTH}
-      >
-        {submitLabel}
-      </Button>
+      {pinSet && (
+        <Field label="Current PIN">
+          <PinInput value={current} onChange={setCurrent} />
+        </Field>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={pinSet ? 'New PIN' : 'PIN'} hint={`${PIN_LENGTH} digits`}>
+          <PinInput value={next} onChange={setNext} />
+        </Field>
+        <Field label={pinSet ? 'Confirm new PIN' : 'Confirm PIN'} hint={mismatch ? "PINs don't match." : undefined}>
+          <PinInput value={confirm} onChange={setConfirm} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" variant="primary" busy={busy === 'set'} disabled={!canSet}>
+          {pinSet ? 'Change PIN' : 'Set PIN'}
+        </Button>
+        {pinSet && (
+          <Button
+            variant="ghost"
+            busy={busy === 'remove'}
+            disabled={!complete(current)}
+            onClick={() => save('remove', null, 'PIN removed')}
+          >
+            <LockKeyholeOpen className="size-4" /> Remove PIN
+          </Button>
+        )}
+      </div>
     </form>
   );
 }
 
-/** Shown after the first login with the default password; nothing else is reachable until it's changed. */
-export function ChangePasswordCard({ onChanged }: { onChanged: (a: AuthState) => void }) {
-  return (
-    <div className="mx-auto max-w-md pt-8">
-      <Card
-        title={
-          <span className="flex items-center gap-2">
-            <KeyRound className="size-4 text-amber-500" /> Set an admin password
-          </span>
-        }
-        description={
-          <>
-            You're using the default password <code className="font-mono">admin</code>. Choose a new one to continue.
-          </>
-        }
-      >
-        <ChangePasswordForm onChanged={onChanged} submitLabel="Set password and continue" />
-      </Card>
-    </div>
-  );
-}
-
-export function SecurityCard({ onChanged, onLogout }: { onChanged: (a: AuthState) => void; onLogout: () => void }) {
+export function SecurityCard({
+  auth,
+  onChanged,
+  onLogout,
+}: {
+  auth: AuthState;
+  onChanged: (a: AuthState) => void;
+  onLogout: () => void;
+}) {
   return (
     <Card
       title="Security"
-      description="Change the admin password. Other browsers that are logged in will be signed out."
+      description={
+        auth.pinSet
+          ? 'Settings are protected by a PIN. Changing or removing it signs out other browsers.'
+          : 'Settings are not protected. Anyone who can open this page can change them, or download a backup that includes your Plex token. Set a PIN to require it for Settings.'
+      }
       actions={
-        <Button size="sm" variant="ghost" onClick={onLogout}>
-          <LogOut className="size-4" /> Log out
-        </Button>
+        auth.pinSet && (
+          <Button size="sm" variant="ghost" onClick={onLogout}>
+            <LogOut className="size-4" /> Log out
+          </Button>
+        )
       }
     >
       <div className="max-w-sm">
-        <ChangePasswordForm onChanged={onChanged} submitLabel="Change password" />
+        <PinForm pinSet={auth.pinSet} onChanged={onChanged} />
       </div>
     </Card>
   );

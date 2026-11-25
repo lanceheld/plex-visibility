@@ -1,7 +1,7 @@
 import { Activity, Heart, LockKeyhole, LogOut, Settings as SettingsIcon, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AuthState, LOGGED_OUT_EVENT, type PublicSettings, type StatusResponse } from './api.ts';
-import { ChangePasswordCard, LoginCard, SecurityCard } from './components/Auth.tsx';
+import { LoginCard, SecurityCard } from './components/Auth.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
 import { HeartbeatCard, MonitoringCard } from './components/MonitoringCard.tsx';
 import { NotificationsCard } from './components/Notifications.tsx';
@@ -44,15 +44,15 @@ export function App() {
   useEffect(() => {
     api.auth().then(setAuth, (err: Error) => setError(err.message));
     const onLoggedOut = () => {
-      setAuth({ authenticated: false, mustChangePassword: false });
+      setAuth({ pinSet: true, authenticated: false });
       setSettings(null);
     };
     window.addEventListener(LOGGED_OUT_EVENT, onLoggedOut);
     return () => window.removeEventListener(LOGGED_OUT_EVENT, onLoggedOut);
   }, []);
 
-  // Settings are admin-only: load them once logged in with a changed password.
-  const canAdmin = auth?.authenticated === true && !auth.mustChangePassword;
+  // Load settings once this browser can use them: no PIN is set, or it was entered.
+  const canAdmin = auth?.authenticated === true;
   useEffect(() => {
     if (canAdmin) {
       api.settings().then(setSettings, (err: Error) => setError(err.message));
@@ -92,9 +92,10 @@ export function App() {
             <Activity className="size-4" /> Status
           </NavButton>
           <NavButton active={page === 'settings'} onClick={() => go('settings')}>
-            {auth?.authenticated ? <SettingsIcon className="size-4" /> : <LockKeyhole className="size-4" />} Settings
+            {auth && !auth.authenticated ? <LockKeyhole className="size-4" /> : <SettingsIcon className="size-4" />}{' '}
+            Settings
           </NavButton>
-          {auth?.authenticated && (
+          {auth?.pinSet && auth.authenticated && (
             <button
               type="button"
               onClick={logout}
@@ -122,8 +123,6 @@ export function App() {
 
       {page === 'settings' && auth && !auth.authenticated ? (
         <LoginCard onLoggedIn={setAuth} />
-      ) : page === 'settings' && auth?.mustChangePassword ? (
-        <ChangePasswordCard onChanged={setAuth} />
       ) : !status || !auth || (page === 'settings' && !settings) ? (
         <div className="space-y-4">
           <div className="h-44 animate-pulse rounded-3xl bg-slate-200 dark:bg-slate-800" />
@@ -149,7 +148,7 @@ export function App() {
           <HeartbeatCard key={settings.heartbeatUrl} settings={settings} onSaved={onSaved} />
           <AppearanceCard />
           <BackupCard onImported={onSaved} />
-          <SecurityCard onChanged={setAuth} onLogout={logout} />
+          <SecurityCard auth={auth} onChanged={setAuth} onLogout={logout} />
         </div>
       )}
 

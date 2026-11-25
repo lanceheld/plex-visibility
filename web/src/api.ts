@@ -19,8 +19,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     headers: { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; mustChangePassword?: boolean };
-  // The session ended (expired, logged out elsewhere, or the password changed): let the app show the login.
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  // The session ended (expired, logged out elsewhere, or the PIN changed): let the app show the login.
   if (res.status === 401 && !url.startsWith('/api/auth')) {
     window.dispatchEvent(new Event(LOGGED_OUT_EVENT));
   }
@@ -34,14 +34,15 @@ export const LOGGED_OUT_EVENT = 'plex-visibility:logged-out';
 
 export const api = {
   auth: () => request<AuthState>('GET', '/api/auth'),
-  login: (password: string) => request<AuthState>('POST', '/api/auth/login', { password }),
+  login: (pin: string) => request<AuthState>('POST', '/api/auth/login', { pin }),
   logout: () => request<AuthState>('POST', '/api/auth/logout', {}),
-  changePassword: (current: string, next: string) =>
-    request<AuthState>('POST', '/api/auth/password', { current, next }),
+  /** Set, change or remove (next: null) the settings PIN. `current` is needed once a PIN is set. */
+  setPin: (current: string | undefined, next: string | null) =>
+    request<AuthState>('PUT', '/api/auth/pin', { current, next }),
   recoveryAvailable: () => request<{ available: boolean }>('GET', '/api/auth/recover'),
   startRecovery: () => request<{ id: number; authUrl: string }>('POST', '/api/auth/recover/pin', {}),
   checkRecovery: (id: number) => request<RecoveryStatus>('GET', `/api/auth/recover/pin/${id}`),
-  recover: (pinId: number, next: string) => request<AuthState>('POST', '/api/auth/recover', { pinId, next }),
+  removePinWithPlex: (pinId: number) => request<AuthState>('POST', '/api/auth/recover', { pinId }),
   status: () => request<StatusResponse>('GET', '/api/status'),
   checkNow: () => request<StatusResponse>('POST', '/api/check', {}),
   settings: () => request<PublicSettings>('GET', '/api/settings'),

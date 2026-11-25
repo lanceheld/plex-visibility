@@ -19,7 +19,11 @@ describe('maskUrl', () => {
   });
 });
 
-async function setup(env: NodeJS.ProcessEnv = {}, { loggedIn = true } = {}) {
+/**
+ * With `pin` (the default), a PIN is set and this "browser" is logged in.
+ * With `pin: false`, no PIN is set, so Settings are open.
+ */
+async function setup(env: NodeJS.ProcessEnv = {}, { pin = true, loggedIn = true } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'pv-'));
   const settings = new SettingsStore(path.join(dir, 'settings.json'));
   await settings.load(env);
@@ -90,14 +94,16 @@ async function setup(env: NodeJS.ProcessEnv = {}, { loggedIn = true } = {}) {
   };
   const get = (url: string) => json('GET', url);
 
-  if (loggedIn) {
-    await json('POST', '/api/auth/login', { password: 'admin' });
-    await json('POST', '/api/auth/password', { current: 'admin', next: NEW_PASSWORD });
+  if (pin) {
+    await json('PUT', '/api/auth/pin', { next: PIN });
+    if (!loggedIn) {
+      await json('POST', '/api/auth/logout', {});
+    }
   }
   return { app, json, get, settings, sent, auth, setCookie: (c: string) => (cookie = c) };
 }
 
-const NEW_PASSWORD = 'correct horse battery';
+const PIN = '482913';
 
 describe('API', () => {
   let ctx: Awaited<ReturnType<typeof setup>>;
@@ -200,28 +206,28 @@ describe('Plex routes', () => {
   });
 });
 
-describe('admin login', () => {
-  it('starts with the default password and forces a change before anything else', async () => {
-    const ctx = await setup({}, { loggedIn: false });
-    expect(await (await ctx.get('/api/auth')).json()).toEqual({ authenticated: false, mustChangePassword: false });
-    expect((await ctx.get('/api/settings')).status).toBe(401);
-
-    const login = await ctx.json('POST', '/api/auth/login', { password: 'admin' });
-    expect(await login.json()).toEqual({ authenticated: true, mustChangePassword: true });
-    const blocked = await ctx.get('/api/settings');
-    expect(blocked.status).toBe(403);
-    expect(await blocked.json()).toMatchObject({ mustChangePassword: true });
-
-    const tooShort = await ctx.json('POST', '/api/auth/password', { current: 'admin', next: 'short' });
-    expect(tooShort.status).toBe(400);
-    const same = await ctx.json('POST', '/api/auth/password', { current: 'admin', next: 'admin' });
-    expect(same.status).toBe(400);
-    const wrong = await ctx.json('POST', '/api/auth/password', { current: 'nope', next: NEW_PASSWORD });
-    expect(wrong.status).toBe(400);
-
-    const changed = await ctx.json('POST', '/api/auth/password', { current: 'admin', next: NEW_PASSWORD });
-    expect(await changed.json()).toEqual({ authenticated: true, mustChangePassword: false });
+describe('settings PIN', () => {
+  it('leaves Settings open until a PIN is set', async () => {
+    const ctx = await setup({}, { pin: false });
+    expect(await (await ctx.get('/api/auth')).json()).toEqual({ pinSet: false, authenticated: true });
     expect((await ctx.get('/api/settings')).status).toBe(200);
+    // Logging in or out without a PIN changes nothing.
+    expect(await (await ctx.json('POST', '/api/auth/login', { pin: '000000' })).json()).toEqual({
+      pinSet: false,
+      authenticated: true,
+    });
+    await ctx.json('POST', '/api/auth/logout', {});
+    expect((await ctx.get('/api/settings')).status).toBe(200);
+
+    expect((await ctx.json('PUT', '/api/auth/pin', { next: '12345' })).status).toBe(400);
+    expect((await ctx.json('PUT', '/api/auth/pin', { next: 'abcdef' })).status).toBe(400);
+    const set = await ctx.json('PUT', '/api/auth/pin', { next: PIN });
+    expect(await set.json()).toEqual({ pinSet: true, authenticated: true });
+    // This browser stays logged in; others now need the PIN.
+    expect((await ctx.get('/api/settings')).status).toBe(200);
+    ctx.setCookie('');
+    expect(await (await ctx.get('/api/auth')).json()).toEqual({ pinSet: true, authenticated: false });
+    expect((await ctx.get('/api/settings')).status).toBe(401);
   });
 
   it('keeps the status page and health check public', async () => {
@@ -234,52 +240,71 @@ describe('admin login', () => {
       ['POST', '/api/targets/test'],
       ['POST', '/api/plex/pin'],
       ['GET', '/api/services'],
+      ['PUT', '/api/auth/pin'],
     ] as const) {
-      expect((await ctx.json(method, url, method === 'GET' ? undefined : {})).status, url).toBe(401);
+      expect((await ctx.json(method, url, method === 'GET' ? undefined : { next: null })).status, url).toBe(401);
     }
   });
 
-  it('rejects wrong passwords, tampered cookies and sessions from before a password change', async () => {
-    const ctx = await setup();
-    const valid = (await ctx.get('/api/auth')).headers; // no new cookie on GET
-    expect(valid.get('set-cookie')).toBeNull();
-
-    expect((await ctx.json('POST', '/api/auth/login', { password: 'admin' })).status).toBe(401);
+  it('rejects wrong PINs, tampered cookies and sessions from before a PIN change', async () => {
+    const ctx = await setup({}, { loggedIn: false });
+    expect((await ctx.json('POST', '/api/auth/login', { pin: '000000' })).status).toBe(401);
 
     ctx.setCookie(`pv_session=${encodeURIComponent('999.99999999999999.forged')}`);
     expect((await ctx.get('/api/settings')).status).toBe(401);
 
-    // Log in, then change the password from "another browser": the first session ends.
-    await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD });
-    const oldCookie = (await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD })).headers.get(
-      'set-cookie',
-    )!;
-    await ctx.auth.setPassword('another password 2');
+    const login = await ctx.json('POST', '/api/auth/login', { pin: PIN });
+    expect(await login.json()).toEqual({ pinSet: true, authenticated: true });
+    const oldCookie = login.headers.get('set-cookie')!;
+    expect((await ctx.get('/api/settings')).status).toBe(200);
+    expect((await ctx.get('/api/auth')).headers.get('set-cookie')).toBeNull(); // no new cookie on GET
+
+    // Change the PIN from "another browser": the first session ends.
+    await ctx.auth.setPin('111111');
     ctx.setCookie(oldCookie.split(';')[0]!);
     expect((await ctx.get('/api/settings')).status).toBe(401);
+  });
+
+  it('needs the current PIN to change or remove it', async () => {
+    const ctx = await setup();
+    expect((await ctx.json('PUT', '/api/auth/pin', { next: '111111' })).status).toBe(401);
+    expect((await ctx.json('PUT', '/api/auth/pin', { current: '000000', next: null })).status).toBe(401);
+
+    const changed = await ctx.json('PUT', '/api/auth/pin', { current: PIN, next: '111111' });
+    expect(await changed.json()).toEqual({ pinSet: true, authenticated: true });
+    expect((await ctx.get('/api/settings')).status).toBe(200);
+    expect(await ctx.auth.verify('111111')).toBe(true);
+
+    const removed = await ctx.json('PUT', '/api/auth/pin', { current: '111111', next: null });
+    expect(await removed.json()).toEqual({ pinSet: false, authenticated: true });
+    expect(ctx.auth.pinSet).toBe(false);
+    expect((await ctx.get('/api/settings')).status).toBe(200);
   });
 
   it('locks out repeated failures and logs out', async () => {
     const ctx = await setup();
     for (let i = 0; i < 5; i++) {
-      await ctx.json('POST', '/api/auth/login', { password: 'wrong' });
+      await ctx.json('POST', '/api/auth/login', { pin: '000000' });
     }
-    const locked = await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD });
+    const locked = await ctx.json('POST', '/api/auth/login', { pin: PIN });
     expect(locked.status).toBe(429);
+    // Guessing through the change form counts too.
+    expect((await ctx.json('PUT', '/api/auth/pin', { current: PIN, next: null })).status).toBe(429);
 
-    expect((await ctx.json('POST', '/api/auth/logout', {})).status).toBe(200);
+    expect(await (await ctx.json('POST', '/api/auth/logout', {})).json()).toEqual({
+      pinSet: true,
+      authenticated: false,
+    });
     expect((await ctx.get('/api/settings')).status).toBe(401);
   });
 });
 
-describe('password recovery', () => {
+describe('forgotten PIN', () => {
   const plex = { PLEX_URL: 'http://plex:32400', PLEX_TOKEN: 'good' };
 
-  it('sets a new password after signing in with Plex as the server owner', async () => {
+  it('is removed after signing in with Plex as the server owner', async () => {
     const ctx = await setup({ ...plex, NOTIFY_URLS: 'ntfy://ntfy.sh/alerts' });
-    const otherBrowser = (await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD })).headers.get(
-      'set-cookie',
-    )!;
+    const otherBrowser = (await ctx.json('POST', '/api/auth/login', { pin: PIN })).headers.get('set-cookie')!;
     await ctx.json('POST', '/api/auth/logout', {});
 
     expect(await (await ctx.get('/api/auth/recover')).json()).toEqual({ available: true });
@@ -287,22 +312,20 @@ describe('password recovery', () => {
     expect(pin).toMatchObject({ id: 9, authUrl: expect.stringContaining('app.plex.tv') });
     expect(await (await ctx.get('/api/auth/recover/pin/9')).json()).toEqual({ status: 'verified' });
 
-    // A rejected password doesn't use up the sign-in.
-    const tooShort = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'short' });
-    expect(tooShort.status).toBe(400);
-    const res = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'a brand new password' });
-    expect(await res.json()).toEqual({ authenticated: true, mustChangePassword: false });
+    const res = await ctx.json('POST', '/api/auth/recover', { pinId: 9 });
+    expect(await res.json()).toEqual({ pinSet: false, authenticated: true });
+    expect(ctx.auth.pinSet).toBe(false);
     expect((await ctx.get('/api/settings')).status).toBe(200);
-    expect(await ctx.auth.verify('a brand new password')).toBe(true);
     await vi.waitFor(() =>
-      expect(ctx.sent).toContainEqual(expect.objectContaining({ title: 'Plex Visibility admin password reset' })),
+      expect(ctx.sent).toContainEqual(expect.objectContaining({ title: 'Plex Visibility settings PIN removed' })),
     );
 
-    // Other sessions end, and the sign-in can't be used again.
+    // Setting a new PIN signs out the other browser's old session, and the sign-in can't be used again.
+    await ctx.json('PUT', '/api/auth/pin', { next: '111111' });
     ctx.setCookie(otherBrowser.split(';')[0]!);
     expect((await ctx.get('/api/settings')).status).toBe(401);
-    const again = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'yet another password' });
-    expect(again.status).toBe(410);
+    expect((await ctx.json('POST', '/api/auth/recover', { pinId: 9 })).status).toBe(410);
+    expect(ctx.auth.pinSet).toBe(true);
   });
 
   it("refuses accounts that don't own the monitored server", async () => {
@@ -310,9 +333,8 @@ describe('password recovery', () => {
     await ctx.json('POST', '/api/auth/recover/pin', {});
     const status = await (await ctx.get('/api/auth/recover/pin/9')).json();
     expect(status).toMatchObject({ status: 'denied', error: expect.stringContaining("doesn't own") });
-    const res = await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'a brand new password' });
-    expect(res.status).toBe(410);
-    expect(await ctx.auth.verify('admin')).toBe(true);
+    expect((await ctx.json('POST', '/api/auth/recover', { pinId: 9 })).status).toBe(410);
+    expect(ctx.auth.pinSet).toBe(true);
   });
 
   it("ignores PINs it didn't start, such as a Settings sign-in", async () => {
@@ -320,10 +342,10 @@ describe('password recovery', () => {
     await ctx.json('POST', '/api/plex/pin', {});
     await ctx.json('POST', '/api/auth/logout', {});
     expect(await (await ctx.get('/api/auth/recover/pin/9')).json()).toEqual({ status: 'expired' });
-    expect((await ctx.json('POST', '/api/auth/recover', { pinId: 9, next: 'a brand new password' })).status).toBe(410);
+    expect((await ctx.json('POST', '/api/auth/recover', { pinId: 9 })).status).toBe(410);
 
     // ...and leaves that sign-in working.
-    await ctx.json('POST', '/api/auth/login', { password: NEW_PASSWORD });
+    await ctx.json('POST', '/api/auth/login', { pin: PIN });
     expect(await (await ctx.get('/api/plex/pin/9')).json()).toMatchObject({ status: 'authorized' });
   });
 

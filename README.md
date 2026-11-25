@@ -20,19 +20,19 @@ This pulls `ghcr.io/lanceheld/plex-visibility:stable`. To build from source inst
 
 Open <http://localhost:8080>, go to **Settings**, then:
 
-1. **Log in as admin** with the default password `admin`. You'll be asked to choose a new password straight away.
-2. **Sign in with Plex.** This finds your server and stores a token scoped to it. You can also enter an address and token by hand.
-3. **Add a destination.** Search about 180 services (email, ntfy, Pushover, Telegram, Discord, Slack, and others), fill in the URL, and send a test.
-4. **Optional but recommended: add a heartbeat URL.** See [the blind spot](#the-blind-spot-and-the-heartbeat).
+1. **Sign in with Plex.** This finds your server and stores a token scoped to it. You can also enter an address and token by hand.
+2. **Add a destination.** Search about 180 services (email, ntfy, Pushover, Telegram, Discord, Slack, and others), fill in the URL, and send a test.
+3. **Optional but recommended: add a heartbeat URL.** See [the blind spot](#the-blind-spot-and-the-heartbeat).
+4. **Optional: set a PIN** under **Security**. See below.
 
-### Admin password
+### Settings PIN
 
-Settings and everything that changes them need the admin password. The status page stays viewable without logging in.
+Like Plex Media Server, Settings can be protected by an optional 6-digit PIN. Without one, anyone who can open the web UI can change settings and download a backup, which includes your Plex token, so set a PIN unless only you can reach the UI. The status page is always viewable without it.
 
-- The password is stored as a scrypt hash in `/config/plex-visibility/auth.json`. Changing it signs out all other browsers.
-- Repeated wrong passwords from one address are locked out for a while.
-- **Forgot it?** Choose **Forgot password?** on the login screen and sign in with the Plex account that owns the monitored server, then set a new password. Shared users of the server can't do this. Your enabled notification destinations get a message when the password is reset this way.
-- **No Plex server set up, or no access to the owner's account?** Stop the container, delete `config/plex-visibility/auth.json`, and start it again. The password goes back to `admin`.
+- Set, change or remove the PIN under **Settings → Security**. It's stored as a scrypt hash in `/config/plex-visibility/auth.json`. Each change signs out all other browsers.
+- Repeated wrong PINs are locked out for a while, both from one address and across all addresses.
+- **Forgot it?** Choose **Forgot PIN?** and sign in with the Plex account that owns the monitored server. This removes the PIN, and you can set a new one. Shared users of the server can't do this. Your enabled notification destinations get a message when the PIN is removed this way.
+- **No Plex server set up, or no access to the owner's account?** Stop the container, delete `config/plex-visibility/auth.json`, and start it again. The PIN is removed.
 
 ## How it works
 

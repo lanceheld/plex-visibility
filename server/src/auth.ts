@@ -1,34 +1,34 @@
 /**
- * Admin password and login sessions.
+ * Optional settings PIN and login sessions.
  *
- * The password is stored as a scrypt hash in auth.json next to the settings.
- * A fresh install starts with the password "admin" and must change it on first
- * login. Deleting auth.json resets it to "admin".
+ * Like Plex Media Server's own PIN, it's off on a fresh install: Settings are
+ * open to anyone who can reach the UI until a PIN is set. Once set, it's stored
+ * as a scrypt hash in auth.json next to the settings. Deleting auth.json, or
+ * signing in with Plex as the server owner, removes it.
  *
- * Sessions are signed cookies holding the password version and an expiry, so
- * they survive restarts, and changing the password signs out every session.
+ * Sessions are signed cookies holding the PIN version and an expiry, so they
+ * survive restarts, and setting, changing or removing the PIN signs out every
+ * session.
  */
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { readJson, writeJson } from './store.ts';
 
-const scrypt = promisify(scryptCb) as (password: string, salt: Buffer, keylen: number) => Promise<Buffer>;
+const scrypt = promisify(scryptCb) as (pin: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 
-export const DEFAULT_PASSWORD = 'admin';
-export const MIN_PASSWORD_LENGTH = 8;
+export const PIN_LENGTH = 6;
+export const PIN_PATTERN = new RegExp(`^\\d{${PIN_LENGTH}}$`);
 export const SESSION_COOKIE = 'pv_session';
 export const SESSION_TTL_MS = 30 * 86400_000;
 
 interface AuthData {
-  salt: string; // base64
-  hash: string; // base64
-  mustChange: boolean;
-  version: number; // bumped on each password change; invalidates older sessions
+  pin: { salt: string; hash: string } | null; // base64
+  version: number; // bumped on each PIN change; invalidates older sessions
   secret: string; // base64, signs session cookies
 }
 
-async function hashPassword(password: string, salt: Buffer): Promise<Buffer> {
-  return scrypt(password, salt, 64);
+async function hashPin(pin: string, salt: Buffer): Promise<Buffer> {
+  return scrypt(pin, salt, 64);
 }
 
 export class AuthStore {
@@ -40,17 +40,19 @@ export class AuthStore {
   }
 
   async load(): Promise<void> {
-    const raw = this.file ? ((await readJson(this.file)) as AuthData | undefined) : undefined;
-    if (raw?.hash && raw.salt && raw.secret) {
-      this.data = raw;
-      return;
+    const raw = this.file ? ((await readJson(this.file)) as Partial<AuthData> | undefined) : undefined;
+    this.data = {
+      pin: raw?.pin?.salt && raw.pin.hash ? raw.pin : null,
+      version: typeof raw?.version === 'number' ? raw.version : 0,
+      secret: raw?.secret || randomBytes(32).toString('base64'),
+    };
+    if (!raw?.secret) {
+      await this.save();
     }
-    this.data = { salt: '', hash: '', mustChange: true, version: 0, secret: randomBytes(32).toString('base64') };
-    await this.storePassword(DEFAULT_PASSWORD, true);
   }
 
-  get mustChange(): boolean {
-    return this.data.mustChange;
+  get pinSet(): boolean {
+    return this.data.pin !== null;
   }
 
   get version(): number {
@@ -61,44 +63,38 @@ export class AuthStore {
     return this.data.secret;
   }
 
-  async verify(password: string): Promise<boolean> {
-    const expected = Buffer.from(this.data.hash, 'base64');
-    const actual = await hashPassword(password, Buffer.from(this.data.salt, 'base64'));
+  /** Whether `pin` matches. Always false when no PIN is set. */
+  async verify(pin: string): Promise<boolean> {
+    if (!this.data.pin || !PIN_PATTERN.test(pin)) {
+      return false;
+    }
+    const expected = Buffer.from(this.data.pin.hash, 'base64');
+    const actual = await hashPin(pin, Buffer.from(this.data.pin.salt, 'base64'));
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   }
 
-  /** Returns an error message if the new password isn't acceptable. */
-  async checkNewPassword(next: string): Promise<string | null> {
-    if (next.length < MIN_PASSWORD_LENGTH) {
-      return `Use at least ${MIN_PASSWORD_LENGTH} characters`;
+  /** Set a new PIN, or remove it with null. Either way, existing sessions end. */
+  async setPin(pin: string | null): Promise<void> {
+    if (pin !== null && !PIN_PATTERN.test(pin)) {
+      throw new Error(`The PIN must be ${PIN_LENGTH} digits`);
     }
-    if (next === DEFAULT_PASSWORD || (await this.verify(next))) {
-      return 'Choose a password different from the current one';
+    let stored: AuthData['pin'] = null;
+    if (pin !== null) {
+      const salt = randomBytes(16);
+      stored = { salt: salt.toString('base64'), hash: (await hashPin(pin, salt)).toString('base64') };
     }
-    return null;
+    this.data = { ...this.data, pin: stored, version: this.data.version + 1 };
+    await this.save();
   }
 
-  async setPassword(next: string): Promise<void> {
-    await this.storePassword(next, false);
-  }
-
-  private async storePassword(password: string, mustChange: boolean): Promise<void> {
-    const salt = randomBytes(16);
-    const hash = await hashPassword(password, salt);
-    this.data = {
-      ...this.data,
-      salt: salt.toString('base64'),
-      hash: hash.toString('base64'),
-      mustChange,
-      version: this.data.version + 1,
-    };
+  private async save(): Promise<void> {
     if (this.file) {
       await writeJson(this.file, this.data);
     }
   }
 }
 
-/** Cookie value: "<password version>.<expiry ms>". The cookie itself is signed. */
+/** Cookie value: "<PIN version>.<expiry ms>". The cookie itself is signed. */
 export function sessionValue(version: number, now = Date.now()): string {
   return `${version}.${now + SESSION_TTL_MS}`;
 }
@@ -112,11 +108,17 @@ export function sessionValid(value: string | false | undefined, version: number,
 }
 
 /**
- * Slows down password guessing: after 5 failures from one address, each further
- * failure locks that address out for twice as long, up to 15 minutes.
+ * Slows down PIN guessing: after `threshold` failures for one key, each further
+ * failure locks that key out for twice as long, starting at 30 seconds, up to
+ * 15 minutes.
  */
 export class LoginLimiter {
   private failures = new Map<string, { count: number; lockedUntil: number }>();
+  private threshold: number;
+
+  constructor(threshold = 5) {
+    this.threshold = threshold;
+  }
 
   lockedFor(key: string, now = Date.now()): number {
     const entry = this.failures.get(key);
@@ -126,8 +128,8 @@ export class LoginLimiter {
   fail(key: string, now = Date.now()): void {
     const entry = this.failures.get(key) ?? { count: 0, lockedUntil: 0 };
     entry.count += 1;
-    if (entry.count >= 5) {
-      entry.lockedUntil = now + Math.min(15 * 60_000, 1000 * 2 ** (entry.count - 5) * 30);
+    if (entry.count >= this.threshold) {
+      entry.lockedUntil = now + Math.min(15 * 60_000, 1000 * 2 ** (entry.count - this.threshold) * 30);
     }
     this.failures.set(key, entry);
   }

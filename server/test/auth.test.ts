@@ -5,36 +5,45 @@ import { describe, expect, it } from 'vitest';
 import { AuthStore, LoginLimiter, SESSION_TTL_MS, sessionValid, sessionValue } from '../src/auth.ts';
 
 describe('AuthStore', () => {
-  it('starts as "admin", stores only a hash, and persists a changed password', async () => {
+  it('starts without a PIN, stores only a hash, and persists a set PIN', async () => {
     const file = path.join(await mkdtemp(path.join(tmpdir(), 'pv-auth-')), 'auth.json');
     const auth = new AuthStore(file);
     await auth.load();
-    expect(auth.mustChange).toBe(true);
-    expect(await auth.verify('admin')).toBe(true);
-    expect(await auth.verify('Admin')).toBe(false);
+    expect(auth.pinSet).toBe(false);
+    expect(await auth.verify('')).toBe(false);
+    expect(await auth.verify('123456')).toBe(false);
 
-    await auth.setPassword('a much better one');
+    await expect(auth.setPin('12345')).rejects.toThrow('6 digits');
+    await expect(auth.setPin('12345a')).rejects.toThrow('6 digits');
+    await auth.setPin('482913');
     const stored = await readFile(file, 'utf8');
-    expect(stored).not.toContain('a much better one');
+    expect(stored).not.toContain('482913');
 
     const reloaded = new AuthStore(file);
     await reloaded.load();
-    expect(reloaded.mustChange).toBe(false);
-    expect(await reloaded.verify('a much better one')).toBe(true);
+    expect(reloaded.pinSet).toBe(true);
+    expect(await reloaded.verify('482913')).toBe(true);
+    expect(await reloaded.verify('482914')).toBe(false);
     expect(reloaded.version).toBe(auth.version);
     expect(reloaded.secret).toBe(auth.secret);
 
-    // Deleting the file resets to the default.
+    // Removing the PIN ends sessions too.
+    const before = reloaded.version;
+    await reloaded.setPin(null);
+    expect(reloaded.pinSet).toBe(false);
+    expect(reloaded.version).toBe(before + 1);
+
+    // Deleting the file removes the PIN.
+    await auth.setPin('482913');
     await rm(file);
     const reset = new AuthStore(file);
     await reset.load();
-    expect(await reset.verify('admin')).toBe(true);
-    expect(reset.mustChange).toBe(true);
+    expect(reset.pinSet).toBe(false);
   });
 });
 
 describe('sessions', () => {
-  it('are valid for the current password version until they expire', () => {
+  it('are valid for the current PIN version until they expire', () => {
     const now = 1_000_000;
     const value = sessionValue(3, now);
     expect(sessionValid(value, 3, now + 1000)).toBe(true);
@@ -59,5 +68,15 @@ describe('LoginLimiter', () => {
     expect(limiter.lockedFor('other', 0)).toBe(0);
     limiter.succeed('ip');
     expect(limiter.lockedFor('ip', 0)).toBe(0);
+  });
+
+  it('takes a custom threshold', () => {
+    const limiter = new LoginLimiter(20);
+    for (let i = 0; i < 19; i++) {
+      limiter.fail('*', 0);
+    }
+    expect(limiter.lockedFor('*', 0)).toBe(0);
+    limiter.fail('*', 0);
+    expect(limiter.lockedFor('*', 0)).toBe(30_000);
   });
 });

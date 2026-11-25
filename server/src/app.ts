@@ -4,11 +4,20 @@ import { type Context, Hono } from 'hono';
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { type AuthStore, LoginLimiter, SESSION_COOKIE, SESSION_TTL_MS, sessionValid, sessionValue } from './auth.ts';
+import {
+  type AuthStore,
+  LoginLimiter,
+  PIN_LENGTH,
+  PIN_PATTERN,
+  SESSION_COOKIE,
+  SESSION_TTL_MS,
+  sessionValid,
+  sessionValue,
+} from './auth.ts';
 import type { AppriseClient } from './notify.ts';
 import { fetchStatus } from './plex.ts';
 import type { PlexAuth } from './plexAuth.ts';
-import { PasswordRecovery } from './recovery.ts';
+import { PinRecovery } from './recovery.ts';
 import type { MonitorService } from './service.ts';
 import {
   exportConfig,
@@ -19,7 +28,7 @@ import {
   toPublic,
 } from './settings.ts';
 import { APP_VERSION } from './version.ts';
-import type { NotifyTarget, PublicSettings, Settings } from './types.ts';
+import type { AuthState, NotifyTarget, PublicSettings, Settings } from './types.ts';
 
 export interface AppDeps {
   settings: SettingsStore;
@@ -88,7 +97,7 @@ const testMessage = {
   body: 'If you can read this, Plex remote access alerts will reach you here.',
 } as const;
 
-/** Routes anyone can use: the read-only status page, logging in, and password recovery. */
+/** Routes anyone can use: the read-only status page, logging in, and removing a forgotten PIN. */
 const PUBLIC_API = new Set(['/api/status', '/api/check', '/api/auth', '/api/auth/login', '/api/auth/logout']);
 const RECOVER = '/api/auth/recover';
 const isPublic = (path: string) => PUBLIC_API.has(path) || path === RECOVER || path.startsWith(`${RECOVER}/`);
@@ -96,8 +105,10 @@ const isPublic = (path: string) => PUBLIC_API.has(path) || path === RECOVER || p
 export function createApp(deps: AppDeps): Hono {
   const { settings, service, apprise, plexAuth, auth } = deps;
   const app = new Hono();
+  // Per address, plus one for everyone: a 6-digit PIN mustn't fall to guesses spread over many addresses.
   const limiter = new LoginLimiter();
-  const recovery = new PasswordRecovery(plexAuth, settings, deps.fetchImpl);
+  const globalLimiter = new LoginLimiter(20);
+  const recovery = new PinRecovery(plexAuth, settings, deps.fetchImpl);
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
@@ -127,6 +138,14 @@ export function createApp(deps: AppDeps): Hono {
   const isLoggedIn = async (c: Context) =>
     sessionValid(await getSignedCookie(c, auth.secret, SESSION_COOKIE), auth.version);
 
+  /** Without a PIN, Settings are open to everyone, as in Plex Media Server. */
+  const hasAccess = async (c: Context) => !auth.pinSet || (await isLoggedIn(c));
+
+  const authState = async (c: Context): Promise<AuthState> => ({
+    pinSet: auth.pinSet,
+    authenticated: await hasAccess(c),
+  });
+
   const startSession = (c: Context) =>
     setSignedCookie(c, SESSION_COOKIE, sessionValue(auth.version), auth.secret, {
       path: '/',
@@ -136,62 +155,79 @@ export function createApp(deps: AppDeps): Hono {
       maxAge: SESSION_TTL_MS / 1000,
     });
 
-  // Everything except the public routes needs an admin session, and a changed default password.
-  app.use('/api/*', async (c, next) => {
-    if (isPublic(c.req.path)) {
-      return next();
-    }
-    if (!(await isLoggedIn(c))) {
-      return c.json({ error: 'Please log in' }, 401);
-    }
-    if (auth.mustChange && c.req.path !== '/api/auth/password') {
-      return c.json({ error: 'Change the default password first', mustChangePassword: true }, 403);
-    }
-    return next();
-  });
+  const endSession = (c: Context) => deleteCookie(c, SESSION_COOKIE, { path: '/' });
 
-  app.get('/api/auth', async (c) => {
-    const authenticated = await isLoggedIn(c);
-    return c.json({ authenticated, mustChangePassword: authenticated && auth.mustChange });
-  });
-
-  app.post('/api/auth/login', async (c) => {
+  /** Check a PIN against both rate limits. Returns an error response, or null when it matched. */
+  const checkPin = async (c: Context, pin: string, wrongMessage: string) => {
     const key = clientAddress(c);
-    const wait = limiter.lockedFor(key);
+    const wait = Math.max(limiter.lockedFor(key), globalLimiter.lockedFor('*'));
     if (wait > 0) {
       return c.json({ error: `Too many attempts. Try again in ${Math.ceil(wait / 1000)} seconds.` }, 429);
     }
-    const { password } = await body(c, z.object({ password: z.string().max(1024) }));
-    if (!(await auth.verify(password))) {
+    if (!(await auth.verify(pin))) {
       limiter.fail(key);
-      return c.json({ error: 'Incorrect password' }, 401);
+      globalLimiter.fail('*');
+      return c.json({ error: wrongMessage }, 401);
     }
     limiter.succeed(key);
-    await startSession(c);
-    return c.json({ authenticated: true, mustChangePassword: auth.mustChange });
-  });
+    globalLimiter.succeed('*');
+    return null;
+  };
 
-  app.post('/api/auth/logout', (c) => {
-    deleteCookie(c, SESSION_COOKIE, { path: '/' });
-    return c.json({ authenticated: false, mustChangePassword: false });
-  });
-
-  app.post('/api/auth/password', async (c) => {
-    const { current, next } = await body(c, z.object({ current: z.string().max(1024), next: z.string().max(1024) }));
-    if (!(await auth.verify(current))) {
-      return c.json({ error: 'Current password is incorrect' }, 400);
+  // Everything except the public routes needs a session once a PIN is set.
+  app.use('/api/*', async (c, next) => {
+    if (isPublic(c.req.path) || (await hasAccess(c))) {
+      return next();
     }
-    const problem = await auth.checkNewPassword(next);
-    if (problem) {
-      return c.json({ error: problem }, 400);
-    }
-    await auth.setPassword(next);
-    // The new password version signs out other sessions; keep this one.
-    await startSession(c);
-    return c.json({ authenticated: true, mustChangePassword: false });
+    return c.json({ error: 'Please enter the PIN' }, 401);
   });
 
-  // --- password recovery: sign in with Plex as the owner of the monitored server ---
+  app.get('/api/auth', async (c) => c.json(await authState(c)));
+
+  app.post('/api/auth/login', async (c) => {
+    const { pin } = await body(c, z.object({ pin: z.string().max(64) }));
+    if (!auth.pinSet) {
+      return c.json(await authState(c));
+    }
+    const failed = await checkPin(c, pin, 'Incorrect PIN');
+    if (failed) {
+      return failed;
+    }
+    await startSession(c);
+    return c.json({ pinSet: true, authenticated: true } satisfies AuthState);
+  });
+
+  app.post('/api/auth/logout', async (c) => {
+    endSession(c);
+    return c.json({ pinSet: auth.pinSet, authenticated: !auth.pinSet } satisfies AuthState);
+  });
+
+  // Set, change or remove (next: null) the PIN. Changing or removing it needs the current one.
+  app.put('/api/auth/pin', async (c) => {
+    const { current, next } = await body(
+      c,
+      z.object({
+        current: z.string().max(64).optional(),
+        next: z.string().regex(PIN_PATTERN, `Use ${PIN_LENGTH} digits`).nullable(),
+      }),
+    );
+    if (auth.pinSet) {
+      const failed = await checkPin(c, current ?? '', 'Current PIN is incorrect');
+      if (failed) {
+        return failed;
+      }
+    }
+    await auth.setPin(next);
+    // The new PIN version signs out other sessions; keep this one.
+    if (next === null) {
+      endSession(c);
+    } else {
+      await startSession(c);
+    }
+    return c.json({ pinSet: next !== null, authenticated: true } satisfies AuthState);
+  });
+
+  // --- forgotten PIN: sign in with Plex as the owner of the monitored server to remove it ---
   app.get(RECOVER, (c) => c.json({ available: recovery.available }));
 
   app.post(`${RECOVER}/pin`, async (c) => c.json(await recovery.start()));
@@ -199,29 +235,26 @@ export function createApp(deps: AppDeps): Hono {
   app.get(`${RECOVER}/pin/:id`, async (c) => c.json(await recovery.check(Number(c.req.param('id')))));
 
   app.post(RECOVER, async (c) => {
-    const { pinId, next } = await body(c, z.object({ pinId: z.number(), next: z.string().max(1024) }));
+    const { pinId } = await body(c, z.object({ pinId: z.number() }));
     if (!recovery.verified(pinId)) {
       throw new HTTPException(410, { message: 'Sign-in expired. Please sign in with Plex again.' });
     }
-    const problem = await auth.checkNewPassword(next);
-    if (problem) {
-      return c.json({ error: problem }, 400);
-    }
     recovery.drop(pinId);
-    await auth.setPassword(next);
-    // As with a change, the new password version signs out every other session.
-    await startSession(c);
-    console.log(`Admin password reset by signing in with Plex (from ${clientAddress(c)})`);
-    const targets = settings.get().notifications.targets.filter((t) => t.enabled);
-    void apprise
-      .notifyAll(
-        targets,
-        'Plex Visibility admin password reset',
-        "The admin password was reset by signing in with the Plex server owner's account. If this wasn't you, sign in to Plex and change your Plex password, then reset the admin password again.",
-        'warning',
-      )
-      .catch((err: Error) => console.error(`Could not send the password reset notice: ${err.message}`));
-    return c.json({ authenticated: true, mustChangePassword: false });
+    if (auth.pinSet) {
+      await auth.setPin(null);
+      console.log(`Settings PIN removed by signing in with Plex (from ${clientAddress(c)})`);
+      const targets = settings.get().notifications.targets.filter((t) => t.enabled);
+      void apprise
+        .notifyAll(
+          targets,
+          'Plex Visibility settings PIN removed',
+          "The settings PIN was removed by signing in with the Plex server owner's account. If this wasn't you, sign in to Plex and change your Plex password, then set a new PIN.",
+          'warning',
+        )
+        .catch((err: Error) => console.error(`Could not send the PIN removal notice: ${err.message}`));
+    }
+    endSession(c);
+    return c.json({ pinSet: false, authenticated: true } satisfies AuthState);
   });
 
   const body = async <T extends z.ZodType>(c: { req: { json: () => Promise<unknown> } }, schema: T) =>

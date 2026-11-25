@@ -39,8 +39,8 @@ app.get('*', serveStatic({ root: relativePublic, path: 'index.html' }));
 service.start();
 const server = serve({ fetch: app.fetch, port, hostname: env.HOST ?? '0.0.0.0' }, (info) => {
   console.log(`Plex Visibility ${APP_VERSION} listening on http://${info.address}:${info.port} (data in ${dataDir})`);
-  if (auth.mustChange) {
-    console.log('The admin password is still the default ("admin"). Log in to Settings to change it.');
+  if (!auth.pinSet) {
+    console.log('No settings PIN is set, so anyone who can open the web UI can change settings.');
   }
 });
 

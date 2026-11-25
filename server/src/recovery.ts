@@ -1,15 +1,16 @@
 /**
- * Admin password recovery by signing in with Plex.
+ * Removing a forgotten settings PIN by signing in with Plex.
  *
- * Whoever owns the monitored Plex server can set a new admin password: they
+ * Whoever owns the monitored Plex server can remove the PIN: they
  * sign in through the same plex.tv PIN flow as Settings, and we check that the
  * account's resources include the configured server, owned rather than shared.
  * The server is identified by its machine identifier from `GET /identity`, so
  * this works whether it was set up through Plex sign-in or entered by hand.
  *
- * Recovery PINs are tracked apart from the Settings sign-in, so a PIN started
- * there can't be used here, and a recovery PIN is used up once the password is
- * set or the account turns out not to own the server.
+ * (Not to be confused with the settings PIN: plex.tv's sign-in also uses "PINs".)
+ * The plex.tv PINs started here are tracked apart from the Settings sign-in, so
+ * one started there can't be used here, and each is used up once the settings
+ * PIN is removed or the account turns out not to own the server.
  */
 import { HTTPException } from 'hono/http-exception';
 import { fetchMachineId } from './plex.ts';
@@ -20,7 +21,7 @@ import type { RecoveryStatus } from './types.ts';
 const PIN_TTL_MS = 15 * 60 * 1000; // as in plexAuth.ts
 const MAX_PENDING = 10; // the routes are public; don't let them pile up plex.tv PINs
 
-export class PasswordRecovery {
+export class PinRecovery {
   private pins = new Map<number, { createdAt: number; verified: boolean }>();
 
   private plexAuth: PlexAuth;
@@ -33,7 +34,7 @@ export class PasswordRecovery {
     this.fetchImpl = fetchImpl;
   }
 
-  /** Recovery needs a Plex server to check ownership of. */
+  /** Removing the PIN this way needs a Plex server to check ownership of. */
   get available(): boolean {
     const { url, token } = this.settings.get().plex;
     return Boolean(url && token);
@@ -41,7 +42,9 @@ export class PasswordRecovery {
 
   async start(): Promise<{ id: number; authUrl: string }> {
     if (!this.available) {
-      throw new HTTPException(409, { message: 'No Plex server is set up, so recovery with Plex is not available' });
+      throw new HTTPException(409, {
+        message: 'No Plex server is set up, so removing the PIN with Plex is not available',
+      });
     }
     const cutoff = Date.now() - PIN_TTL_MS;
     for (const [id, pin] of this.pins) {
@@ -98,13 +101,13 @@ export class PasswordRecovery {
     return { status: 'denied', error: `That Plex account doesn't own ${name}. Sign in with the owner's account.` };
   }
 
-  /** Whether this PIN's account was confirmed as the server owner and the PIN hasn't been used. */
+  /** Whether this plex.tv PIN's account was confirmed as the server owner and the PIN hasn't been used. */
   verified(id: number): boolean {
     const entry = this.pins.get(id);
     return Boolean(entry?.verified && Date.now() - entry.createdAt <= PIN_TTL_MS);
   }
 
-  /** Use up a recovery PIN. Other PINs (a Settings sign-in in progress) are left alone. */
+  /** Use up a plex.tv PIN started here. Other PINs (a Settings sign-in in progress) are left alone. */
   drop(id: number): void {
     if (this.pins.delete(id)) {
       this.plexAuth.finish(id);

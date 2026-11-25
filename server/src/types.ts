@@ -94,15 +94,17 @@ export interface StatusResponse {
 }
 
 export interface AuthState {
+  /** Whether Settings are protected by a PIN. */
+  pinSet: boolean;
+  /** Whether this browser can use Settings: no PIN is set, or it entered the PIN. */
   authenticated: boolean;
-  mustChangePassword: boolean;
 }
 
-/** Progress of a password recovery through Plex sign-in. */
+/** Progress of removing a forgotten PIN through Plex sign-in. */
 export type RecoveryStatus =
   | { status: 'waiting' }
   | { status: 'expired' }
-  | { status: 'verified' } // signed in as the server's owner: a new password can be set
+  | { status: 'verified' } // signed in as the server's owner: the PIN can be removed
   | { status: 'denied'; error: string };
 
 export interface TestResult {
