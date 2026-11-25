@@ -72,6 +72,8 @@ Images are published to `ghcr.io/lanceheld/plex-visibility` for `linux/amd64` an
 
 Use `stable` unless you want unreleased changes.
 
+Releases (`stable` and version tags) are also published to Docker Hub. Snapshots are on GHCR only.
+
 ## Configuration
 
 Everything is set in the UI and saved to `/config/plex-visibility/settings.json` (the `./config` volume). Environment variables:

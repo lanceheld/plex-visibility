@@ -2,6 +2,11 @@ name: Docker image
 
 # Snapshot builds: every push to main, tagged with `git describe` and `latest`.
 # Release builds: publishing a GitHub release, tagged with the release version and `stable`.
+# Snapshots go to GHCR only; releases go to GHCR and Docker Hub.
+#
+# Docker Hub needs a repository variable DOCKERHUB_USERNAME and a secret DOCKERHUB_TOKEN:
+# a Docker Hub personal access token with read/write/delete scope (delete is needed to
+# update the repository description from README.md).
 
 on:
   push:
@@ -57,11 +62,24 @@ jobs:
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "Version: $version, channel: ${channel:-none}" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check Docker Hub credentials
+        if: github.event_name == 'release'
+        env:
+          DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::error::Set the DOCKERHUB_USERNAME repository variable and DOCKERHUB_TOKEN secret to publish releases to Docker Hub."
+            exit 1
+          fi
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: |
+            ghcr.io/${{ github.repository }}
+            name=docker.io/${{ vars.DOCKERHUB_USERNAME }}/plex-visibility,enable=${{ github.event_name == 'release' }}
           flavor: latest=false
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
@@ -82,6 +100,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        if: github.event_name == 'release'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -93,3 +118,16 @@ jobs:
           build-args: VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Keep the Docker Hub page in step with the README of the release.
+      - name: Update Docker Hub description
+        if: github.event_name == 'release'
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ vars.DOCKERHUB_USERNAME }}/plex-visibility
+          short-description: Monitors Plex remote access and alerts you when your server can't be reached from outside
+          readme-filepath: ./README.md
+          # Turn relative links (like #the-blind-spot-and-the-heartbeat) into absolute GitHub links.
+          enable-url-completion: true
