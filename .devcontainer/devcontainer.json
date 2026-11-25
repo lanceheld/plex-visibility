@@ -1,6 +1,7 @@
 // Development container (see Dockerfile). Node comes from a feature at the
 // major version .node-version and the Dockerfile use (change them together).
-// Docker, Claude Code and the GitHub CLI come from features too.
+// Docker, Claude Code and the GitHub CLI come from features too; the
+// SonarQube CLI (`sonar`) is installed by the Dockerfile.
 //
 // Docker runs inside the container (docker-in-docker), not against the
 // host's daemon, so `docker build .`, `docker compose up --build` and the
@@ -36,7 +37,13 @@
   // shared (on macOS it lives in the Keychain): run `claude` and log in
   // once inside the container.
   "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    // The SonarQube CLI keeps its login in the OS keychain, which the
+    // container doesn't have ("No usable system keychain is available").
+    // With this set it uses a file instead, on the volume below, so the
+    // login survives rebuilds. Run `sonar auth login --org lanceheld` once
+    // inside the container.
+    "SONARQUBE_CLI_KEYCHAIN_FILE": "/home/vscode/.sonar/sonarqube-cli/keychain.json"
   },
   "mounts": [
     // Linux node_modules stay out of the host's (oxlint, rollup and
@@ -46,11 +53,13 @@
     "source=plex-visibility-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
     "source=plex-visibility-docker,target=/var/lib/docker,type=volume",
     "source=plex-visibility-claude-config,target=/home/vscode/.claude,type=volume",
-    "source=plex-visibility-gh-config,target=/home/vscode/.config/gh,type=volume"
+    "source=plex-visibility-gh-config,target=/home/vscode/.config/gh,type=volume",
+    // SonarQube CLI login, settings and logs.
+    "source=plex-visibility-sonar,target=/home/vscode/.sonar,type=volume"
   ],
   // A new volume is owned by root, as is a parent directory Docker
   // creates for one (~/.config).
-  "postCreateCommand": "sudo chown vscode:vscode node_modules /home/vscode/.claude /home/vscode/.config /home/vscode/.config/gh && npm ci",
+  "postCreateCommand": "sudo chown vscode:vscode node_modules /home/vscode/.claude /home/vscode/.config /home/vscode/.config/gh /home/vscode/.sonar && chmod 700 /home/vscode/.sonar && npm ci",
   // `npm run dev` (API and Vite), and the image from `docker compose up`.
   "forwardPorts": [5173, 8080],
   "portsAttributes": {
