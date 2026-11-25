@@ -49,12 +49,12 @@ jobs:
       # Exchanges the job's GitHub OIDC token for a short-lived SonarQube Cloud
       # token and exports it as SONAR_TOKEN for the steps below. No stored secret.
       - name: SonarQube Cloud authentication
-        uses: SonarSource/sonarqube-auth-action@v1
+        uses: SonarSource/sonarqube-auth-action@a0aa643acde4162396015b4f12536c1b9c4aab82 # v1.1.0
 
       # qualitygate.wait makes the scan wait for the quality gate and fail the
       # step when it fails, so no separate quality gate action is needed.
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@70bad232163b09d998ea0707ee80c0ec80798c16 # v8.5.1
         with:
           args: >
             -Dsonar.qualitygate.wait=true
