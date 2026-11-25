@@ -1,12 +1,14 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 /** Read a JSON file, returning undefined if it doesn't exist. */
 export async function readJson(file: string): Promise<unknown> {
   try {
-    return JSON.parse(await readFile(file, "utf8"));
+    return JSON.parse(await readFile(file, 'utf8'));
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return undefined;
+    }
     throw err;
   }
 }

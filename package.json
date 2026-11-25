@@ -11,8 +11,14 @@
     "dev": "node --watch --experimental-strip-types server/src/index.ts & vite --config web/vite.config.ts",
     "build": "tsc -p server && tsc -p web --noEmit && vite build --config web/vite.config.ts",
     "start": "node dist/server/index.js",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "audit": "npx better-npm-audit audit --production",
+    "typecheck": "tsc -p server --noEmit && tsc -p web --noEmit",
     "test": "vitest run",
-    "typecheck": "tsc -p server --noEmit && tsc -p web --noEmit"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.11",
@@ -25,7 +31,11 @@
     "@types/react": "^19.3.1",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
+    "@vitest/coverage-v8": "^5.1.1",
+    "better-npm-audit": "^4.2.1",
     "lucide-react": "^1.79.0",
+    "oxlint": "^1.95.0",
+    "prettier": "^3.10.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tailwindcss": "^4.3.5",

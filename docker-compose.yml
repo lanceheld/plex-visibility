@@ -1,10 +1,12 @@
 services:
   plex-visibility:
+    image: ghcr.io/lanceheld/plex-visibility:stable
+    # Used by `docker compose up --build`, or if the image can't be pulled.
     build: .
     container_name: plex-visibility
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - '8080:8080'
     volumes:
       # Settings, history, and apprise-api's own data.
       - ./config:/config

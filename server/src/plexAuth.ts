@@ -5,8 +5,8 @@
  * account's servers. Each server comes with its own access token, which is
  * what we store: it is scoped to that server, unlike the account token.
  */
-import { PLEX_HEADERS } from "./plex.ts";
-import type { PinStatus, PlexServerOption } from "./types.ts";
+import { PLEX_HEADERS } from './plex.ts';
+import type { PinStatus, PlexServerOption } from './types.ts';
 
 interface PlexResource {
   name: string;
@@ -39,50 +39,66 @@ export class PlexAuth {
   private headers(token?: string): Record<string, string> {
     return {
       ...PLEX_HEADERS,
-      "X-Plex-Client-Identifier": this.clientId(),
-      ...(token ? { "X-Plex-Token": token } : {}),
+      'X-Plex-Client-Identifier': this.clientId(),
+      ...(token ? { 'X-Plex-Token': token } : {}),
     };
   }
 
   private prune(): void {
     const cutoff = Date.now() - PIN_TTL_MS;
-    for (const [id, pin] of this.pins) if (pin.createdAt < cutoff) this.pins.delete(id);
+    for (const [id, pin] of this.pins) {
+      if (pin.createdAt < cutoff) {
+        this.pins.delete(id);
+      }
+    }
   }
 
   async createPin(): Promise<{ id: number; authUrl: string }> {
     this.prune();
-    const res = await this.fetchImpl("https://plex.tv/api/v2/pins?strong=true", {
-      method: "POST",
+    const res = await this.fetchImpl('https://plex.tv/api/v2/pins?strong=true', {
+      method: 'POST',
       headers: this.headers(),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) throw new Error(`plex.tv refused the sign-in request (HTTP ${res.status})`);
+    if (!res.ok) {
+      throw new Error(`plex.tv refused the sign-in request (HTTP ${res.status})`);
+    }
     const pin = (await res.json()) as { id: number; code: string };
     this.pins.set(pin.id, { code: pin.code, createdAt: Date.now() });
     const params = new URLSearchParams({
       clientID: this.clientId(),
       code: pin.code,
-      "context[device][product]": PLEX_HEADERS["X-Plex-Product"],
+      'context[device][product]': PLEX_HEADERS['X-Plex-Product'],
     });
     return { id: pin.id, authUrl: `https://app.plex.tv/auth#?${params}` };
   }
 
   async checkPin(id: number): Promise<PinStatus> {
     const pending = this.pins.get(id);
-    if (!pending || Date.now() - pending.createdAt > PIN_TTL_MS) return { status: "expired" };
-    if (pending.servers) return { status: "authorized", servers: pending.servers.map(stripToken) };
+    if (!pending || Date.now() - pending.createdAt > PIN_TTL_MS) {
+      return { status: 'expired' };
+    }
+    if (pending.servers) {
+      return { status: 'authorized', servers: pending.servers.map(stripToken) };
+    }
 
     const res = await this.fetchImpl(`https://plex.tv/api/v2/pins/${id}`, {
       headers: this.headers(),
       signal: AbortSignal.timeout(10_000),
     });
-    if (res.status === 404) return { status: "expired" };
-    if (!res.ok) throw new Error(`plex.tv returned HTTP ${res.status}`);
+    if (res.status === 404) {
+      return { status: 'expired' };
+    }
+    if (!res.ok) {
+      throw new Error(`plex.tv returned HTTP ${res.status}`);
+    }
     const { authToken } = (await res.json()) as { authToken: string | null };
-    if (!authToken) return { status: "waiting" };
+    if (!authToken) {
+      return { status: 'waiting' };
+    }
 
     pending.servers = await this.listServers(authToken);
-    return { status: "authorized", servers: pending.servers.map(stripToken) };
+    return { status: 'authorized', servers: pending.servers.map(stripToken) };
   }
 
   /** Token for a server the user picked after signing in with this PIN. */
@@ -95,14 +111,16 @@ export class PlexAuth {
   }
 
   private async listServers(accountToken: string): Promise<(PlexServerOption & { accessToken: string })[]> {
-    const res = await this.fetchImpl("https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1", {
+    const res = await this.fetchImpl('https://clients.plex.tv/api/v2/resources?includeHttps=1&includeRelay=1', {
       headers: this.headers(accountToken),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) throw new Error(`Could not list your Plex servers (HTTP ${res.status})`);
+    if (!res.ok) {
+      throw new Error(`Could not list your Plex servers (HTTP ${res.status})`);
+    }
     const resources = (await res.json()) as PlexResource[];
     return resources
-      .filter((r) => r.provides.split(",").includes("server"))
+      .filter((r) => r.provides.split(',').includes('server'))
       .map((r) => ({
         id: r.clientIdentifier,
         name: r.name,

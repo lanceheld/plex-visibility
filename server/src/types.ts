@@ -1,12 +1,12 @@
 // Types shared by the server and the web UI (the UI imports these as type-only).
 
 export type State =
-  | "ok" // reachable from the internet
-  | "unreachable" // server is up, but plex.tv can't reach it
-  | "signed_out" // server isn't signed in to plex.tv, so remote access is impossible
-  | "server_down" // the monitor can't talk to the Plex server at all
-  | "auth_error" // the Plex token was rejected
-  | "unconfigured"; // no Plex server set up yet
+  | 'ok' // reachable from the internet
+  | 'unreachable' // server is up, but plex.tv can't reach it
+  | 'signed_out' // server isn't signed in to plex.tv, so remote access is impossible
+  | 'server_down' // the monitor can't talk to the Plex server at all
+  | 'auth_error' // the Plex token was rejected
+  | 'unconfigured'; // no Plex server set up yet
 
 export interface RemoteStatus {
   state: State;
@@ -37,14 +37,14 @@ export interface Settings {
 }
 
 /** Settings as sent to the browser: the Plex token never leaves the server. */
-export type PublicSettings = Omit<Settings, "plex" | "clientId"> & {
+export type PublicSettings = Omit<Settings, 'plex' | 'clientId'> & {
   plex: { url: string; serverName: string; hasToken: boolean };
 };
 
 export type SettingsUpdate = {
-  plex?: Partial<Settings["plex"]>;
-  monitor?: Partial<Settings["monitor"]>;
-  notifications?: Partial<Settings["notifications"]>;
+  plex?: Partial<Settings['plex']>;
+  monitor?: Partial<Settings['monitor']>;
+  notifications?: Partial<Settings['notifications']>;
   heartbeatUrl?: string;
 };
 
@@ -56,7 +56,7 @@ export interface Segment {
   detail: string;
 }
 
-export type AlertKind = "down" | "changed" | "reminder" | "recovered";
+export type AlertKind = 'down' | 'changed' | 'reminder' | 'recovered';
 
 export interface AlertLogEntry {
   at: string;
@@ -100,6 +100,4 @@ export interface PlexServerOption {
 }
 
 export type PinStatus =
-  | { status: "waiting" }
-  | { status: "expired" }
-  | { status: "authorized"; servers: PlexServerOption[] };
+  { status: 'waiting' } | { status: 'expired' } | { status: 'authorized'; servers: PlexServerOption[] };

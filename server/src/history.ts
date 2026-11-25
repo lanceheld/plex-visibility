@@ -2,8 +2,8 @@
  * Check history, stored compactly as segments (runs of the same state) rather
  * than one row per check, plus a log of the alerts that were sent.
  */
-import { readJson, writeJson } from "./store.ts";
-import type { AlertLogEntry, RemoteStatus, Segment } from "./types.ts";
+import { readJson, writeJson } from './store.ts';
+import type { AlertLogEntry, RemoteStatus, Segment } from './types.ts';
 
 const KEEP_MS = 30 * 86400_000;
 const MAX_ALERTS = 200;
@@ -25,17 +25,23 @@ export class History {
   }
 
   async load(): Promise<void> {
-    if (!this.file) return;
+    if (!this.file) {
+      return;
+    }
     const raw = (await readJson(this.file)) as Partial<HistoryData> | undefined;
     this.data = { segments: raw?.segments ?? [], alerts: raw?.alerts ?? [] };
   }
 
   async save(): Promise<void> {
-    if (this.file) await writeJson(this.file, this.data, 0o644);
+    if (this.file) {
+      await writeJson(this.file, this.data, 0o644);
+    }
   }
 
   record(status: RemoteStatus): void {
-    if (status.state === "unconfigured") return;
+    if (status.state === 'unconfigured') {
+      return;
+    }
     const at = status.checkedAt;
     const last = this.data.segments.at(-1);
     const gap = last ? Date.parse(at) - Date.parse(last.end) : Infinity;
@@ -74,12 +80,17 @@ export class History {
     segs.forEach((s, i) => {
       const start = Date.parse(s.start);
       const next = segs[i + 1];
-      const end = next && Date.parse(next.start) - Date.parse(s.end) <= GAP_MS ? Date.parse(next.start) : Date.parse(s.end);
+      const end =
+        next && Date.parse(next.start) - Date.parse(s.end) <= GAP_MS ? Date.parse(next.start) : Date.parse(s.end);
       const span = Math.max(0, end - start);
       total += span;
-      if (s.state === "ok") up += span;
+      if (s.state === 'ok') {
+        up += span;
+      }
     });
-    if (total === 0) return segs.length ? (segs.every((s) => s.state === "ok") ? 1 : 0) : null;
+    if (total === 0) {
+      return segs.length ? (segs.every((s) => s.state === 'ok') ? 1 : 0) : null;
+    }
     return up / total;
   }
 }

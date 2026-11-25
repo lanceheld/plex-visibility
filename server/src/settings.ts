@@ -1,18 +1,22 @@
-import { randomUUID } from "node:crypto";
-import { z } from "zod";
-import { readJson, writeJson } from "./store.ts";
-import type { PublicSettings, Settings, SettingsUpdate } from "./types.ts";
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import { readJson, writeJson } from './store.ts';
+import type { PublicSettings, Settings, SettingsUpdate } from './types.ts';
 
 const httpUrl = z
   .string()
   .trim()
-  .refine((v) => v === "" || /^https?:\/\/[^\s]+$/i.test(v), "Must be an http:// or https:// URL")
-  .transform((v) => v.replace(/\/+$/, ""));
+  .refine((v) => v === '' || /^https?:\/\/[^\s]+$/i.test(v), 'Must be an http:// or https:// URL')
+  .transform((v) => v.replace(/\/+$/, ''));
 
 const targetSchema = z.object({
   id: z.string().min(1),
   label: z.string().trim().max(80),
-  url: z.string().trim().min(3).regex(/^[a-z][a-z0-9+.-]*:\/\//i, "Must be an Apprise URL like mailtos://…"),
+  url: z
+    .string()
+    .trim()
+    .min(3)
+    .regex(/^[a-z][a-z0-9+.-]*:\/\//i, 'Must be an Apprise URL like mailtos://…'),
   enabled: z.boolean(),
 });
 
@@ -22,7 +26,11 @@ export const settingsSchema = z.object({
   monitor: z.object({
     checkInterval: z.number().int().min(15).max(3600),
     failThreshold: z.number().int().min(1).max(60),
-    remindInterval: z.number().int().min(0).max(7 * 86400),
+    remindInterval: z
+      .number()
+      .int()
+      .min(0)
+      .max(7 * 86400),
   }),
   notifications: z.object({ targets: z.array(targetSchema).max(50), notifyOnRecovery: z.boolean() }),
   heartbeatUrl: httpUrl,
@@ -31,30 +39,36 @@ export const settingsSchema = z.object({
 export function defaultSettings(): Settings {
   return {
     clientId: randomUUID(),
-    plex: { url: "", token: "", serverName: "" },
+    plex: { url: '', token: '', serverName: '' },
     monitor: { checkInterval: 60, failThreshold: 3, remindInterval: 6 * 3600 },
     notifications: { targets: [], notifyOnRecovery: true },
-    heartbeatUrl: "",
+    heartbeatUrl: '',
   };
 }
 
 /** Optional env vars pre-fill the very first config, for headless setups. */
 export function seedFromEnv(env: NodeJS.ProcessEnv, base: Settings): Settings {
   const s = structuredClone(base);
-  if (env.PLEX_URL) s.plex.url = env.PLEX_URL.trim().replace(/\/+$/, "");
-  if (env.PLEX_TOKEN) s.plex.token = env.PLEX_TOKEN.trim();
-  if (env.HEARTBEAT_URL) s.heartbeatUrl = env.HEARTBEAT_URL.trim();
+  if (env.PLEX_URL) {
+    s.plex.url = env.PLEX_URL.trim().replace(/\/+$/, '');
+  }
+  if (env.PLEX_TOKEN) {
+    s.plex.token = env.PLEX_TOKEN.trim();
+  }
+  if (env.HEARTBEAT_URL) {
+    s.heartbeatUrl = env.HEARTBEAT_URL.trim();
+  }
   if (env.NOTIFY_URLS) {
     s.notifications.targets = env.NOTIFY_URLS.split(/\s+/)
       .filter(Boolean)
-      .map((url) => ({ id: randomUUID(), label: url.split("://")[0]!, url, enabled: true }));
+      .map((url) => ({ id: randomUUID(), label: url.split('://')[0]!, url, enabled: true }));
   }
   return s;
 }
 
 export function toPublic(s: Settings): PublicSettings {
   const { clientId: _, plex, ...rest } = s;
-  return { ...rest, plex: { url: plex.url, serverName: plex.serverName, hasToken: plex.token !== "" } };
+  return { ...rest, plex: { url: plex.url, serverName: plex.serverName, hasToken: plex.token !== '' } };
 }
 
 export function applyUpdate(current: Settings, update: SettingsUpdate): Settings {
@@ -105,7 +119,9 @@ export class SettingsStore {
   async update(update: SettingsUpdate): Promise<Settings> {
     this.current = applyUpdate(this.current, update);
     await writeJson(this.file, this.current);
-    for (const fn of this.listeners) fn(this.current);
+    for (const fn of this.listeners) {
+      fn(this.current);
+    }
     return this.current;
   }
 

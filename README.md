@@ -1,5 +1,10 @@
 # Plex Visibility
 
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=coverage)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
+[![Security issues](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=software_quality_security_issues)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
+
 Watches your Plex Media Server's **Remote Access** status and alerts you when the server stops being reachable from outside your network, and again when it recovers. It's one Docker container with a web UI for setup, history, and choosing where alerts go.
 
 > **Why not a Plex plugin?** Plex retired its plugin framework in 2018–2019, and current servers no longer load plugins. The supported approach is a small service that talks to the Plex HTTP API, which is what this is.
@@ -7,8 +12,10 @@ Watches your Plex Media Server's **Remote Access** status and alerts you when th
 ## Quick start
 
 ```sh
-docker compose up -d --build
+docker compose up -d
 ```
+
+This pulls `ghcr.io/lanceheld/plex-visibility:stable`. To build from source instead, run `docker compose up -d --build`.
 
 Open <http://localhost:8080>, go to **Settings**, then:
 
@@ -20,15 +27,15 @@ Set `UI_PASSWORD` if anyone else can reach port 8080. The settings page can chan
 
 ## How it works
 
-Plex already tests its own reachability: plex.tv periodically connects back to your public IP and port and records whether it got through. The server shows that result at `GET /myplex/account`, the same data behind *Settings → Remote Access* ("Fully accessible outside your network"). The monitor reads it on a schedule and classifies the result:
+Plex already tests its own reachability: plex.tv periodically connects back to your public IP and port and records whether it got through. The server shows that result at `GET /myplex/account`, the same data behind _Settings → Remote Access_ ("Fully accessible outside your network"). The monitor reads it on a schedule and classifies the result:
 
-| State | Meaning |
-| --- | --- |
-| Reachable | `mappingState=mapped` |
-| Not reachable remotely | Server is up, but plex.tv can't reach it (port forward, UPnP, CGNAT, IP change, …) |
-| Signed out of plex.tv | Remote access can't work until the server is signed back in |
-| Server not responding | The monitor can't reach the Plex server at all |
-| Can't sign in to server | The stored token was rejected; sign in again |
+| State                   | Meaning                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| Reachable               | `mappingState=mapped`                                                              |
+| Not reachable remotely  | Server is up, but plex.tv can't reach it (port forward, UPnP, CGNAT, IP change, …) |
+| Signed out of plex.tv   | Remote access can't work until the server is signed back in                        |
+| Server not responding   | The monitor can't reach the Plex server at all                                     |
+| Can't sign in to server | The stored token was rejected; sign in again                                       |
 
 Alerts are debounced. You get **one** alert after N consecutive bad checks, optional "still down" reminders, a new alert if the reason changes, and a **recovery** message with the outage length.
 
@@ -45,17 +52,30 @@ Destination URLs are stored on the server and only shown masked in the UI. The P
 
 If the power, the host, or your internet connection goes down, the monitor can't send anything, and that's often exactly when remote access breaks. To cover it, create a free [healthchecks.io](https://healthchecks.io) check (or an Uptime Kuma push monitor) and paste its URL under **Settings → Heartbeat**. The monitor pings it after every check, and healthchecks.io alerts you if the pings stop.
 
+## Images
+
+Images are published to `ghcr.io/lanceheld/plex-visibility` for `linux/amd64` and `linux/arm64`:
+
+| Tag                | Built from                                   |
+| ------------------ | -------------------------------------------- |
+| `stable`           | The latest published GitHub release          |
+| `1.2.3`            | Release `v1.2.3`                             |
+| `latest`           | The latest commit on `main` (snapshot)       |
+| `1.2.3-4-gabc1234` | A specific snapshot, named by `git describe` |
+
+Use `stable` unless you want unreleased changes.
+
 ## Configuration
 
 Everything is set in the UI and saved to `/config/plex-visibility/settings.json` (the `./config` volume). Environment variables:
 
-| Variable | Default | |
-| --- | --- | --- |
-| `UI_PASSWORD` | *(none)* | Protects the UI and API with HTTP basic auth (any username) |
-| `PORT` | `8080` | Web UI port inside the container |
-| `PUID` / `PGID` | `1000` | User the processes run as, so `./config` is owned by you |
-| `TZ` | `Etc/UTC` | Time zone for logs |
-| `PLEX_URL`, `PLEX_TOKEN`, `NOTIFY_URLS`, `HEARTBEAT_URL` | | Optional: pre-fill settings on **first** start only, for headless setups. `NOTIFY_URLS` is space-separated Apprise URLs. |
+| Variable                                                 | Default   |                                                                                                                          |
+| -------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `UI_PASSWORD`                                            | _(none)_  | Protects the UI and API with HTTP basic auth (any username)                                                              |
+| `PORT`                                                   | `8080`    | Web UI port inside the container                                                                                         |
+| `PUID` / `PGID`                                          | `1000`    | User the processes run as, so `./config` is owned by you                                                                 |
+| `TZ`                                                     | `Etc/UTC` | Time zone for logs                                                                                                       |
+| `PLEX_URL`, `PLEX_TOKEN`, `NOTIFY_URLS`, `HEARTBEAT_URL` |           | Optional: pre-fill settings on **first** start only, for headless setups. `NOTIFY_URLS` is space-separated Apprise URLs. |
 
 **Networking:** the monitor needs to reach Plex at the address you pick, usually its LAN address (the sign-in flow lists local addresses first). If Plex runs on the same host with host networking, you can instead use `network_mode: host` and `http://localhost:32400`.
 
@@ -66,6 +86,8 @@ Requires Node 22+.
 ```sh
 npm install
 npm test            # server unit tests
+npm run lint        # oxlint
+npm run format      # prettier
 npm run typecheck
 ```
 

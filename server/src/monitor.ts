@@ -1,5 +1,5 @@
 /** Alerting state machine: ignores brief blips, sends one alert per outage, reminders, and recovery. */
-import type { AlertKind, RemoteStatus, State } from "./types.ts";
+import type { AlertKind, RemoteStatus, State } from './types.ts';
 
 export interface MonitorEvent {
   kind: AlertKind;
@@ -36,13 +36,13 @@ export class Monitor {
   /** Record one check result; returns the notification to send, if any. */
   observe(status: RemoteStatus, now: Date): MonitorEvent | null {
     // Nothing to monitor yet: neither healthy nor an outage.
-    if (status.state === "unconfigured") {
+    if (status.state === 'unconfigured') {
       this.reset();
       return null;
     }
 
-    if (status.state === "ok") {
-      const event = this.alerting ? this.event("recovered", status, now) : null;
+    if (status.state === 'ok') {
+      const event = this.alerting ? this.event('recovered', status, now) : null;
       this.reset();
       return event;
     }
@@ -51,13 +51,15 @@ export class Monitor {
     this.firstBadAt ??= now;
 
     if (!this.alerting) {
-      return this.consecutiveBad >= this.options.failThreshold ? this.alert("down", status, now) : null;
+      return this.consecutiveBad >= this.options.failThreshold ? this.alert('down', status, now) : null;
     }
-    if (status.state !== this.alertedState) return this.alert("changed", status, now);
+    if (status.state !== this.alertedState) {
+      return this.alert('changed', status, now);
+    }
 
     const { remindIntervalMs } = this.options;
     if (remindIntervalMs > 0 && this.lastAlertAt && now.getTime() - this.lastAlertAt.getTime() >= remindIntervalMs) {
-      return this.alert("reminder", status, now);
+      return this.alert('reminder', status, now);
     }
     return null;
   }

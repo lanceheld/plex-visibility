@@ -1,0 +1,89 @@
+name: Docker image
+
+# Snapshot builds: every push to main, tagged with `git describe` and `latest`.
+# Release builds: publishing a GitHub release, tagged with the release version and `stable`.
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          # Full history and tags, for git describe.
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            version="${RELEASE_TAG#v}"
+            # A pre-release gets its version tag but doesn't move `stable`.
+            if [ "$PRERELEASE" = "true" ]; then channel=""; else channel="stable"; fi
+          else
+            version="$(git describe --tags --always --dirty)"
+            version="${version#v}"
+            channel="latest"
+          fi
+          # Docker tags allow [A-Za-z0-9_.-] only.
+          version="$(printf '%s' "$version" | tr -c 'A-Za-z0-9_.-' '-')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "Version: $version, channel: ${channel:-none}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.channel }},enable=${{ steps.version.outputs.channel != '' }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

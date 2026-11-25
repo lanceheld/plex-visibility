@@ -5,7 +5,8 @@ ARG NODE_IMAGE=node:24-trixie-slim
 ARG APPRISE_IMAGE=caronc/apprise:2.2.0
 
 # --- build the server and web UI ---
-FROM ${NODE_IMAGE} AS build
+# The output is plain JavaScript, so build once on the native platform even for multi-arch images.
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -16,6 +17,7 @@ RUN npm run build && npm prune --omit=dev
 # --- runtime: apprise-api (nginx + gunicorn under supervisord) plus our Node app ---
 FROM ${NODE_IMAGE} AS node
 FROM ${APPRISE_IMAGE}
+ARG VERSION=dev
 
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /app/package.json /app/
@@ -46,7 +48,12 @@ ENV \
     # The web UI and API.
     PORT=8080 \
     DATA_DIR=/config/plex-visibility \
-    NODE_ENV=production
+    NODE_ENV=production \
+    APP_VERSION=${VERSION}
+
+LABEL org.opencontainers.image.title="plex-visibility" \
+      org.opencontainers.image.description="Monitors Plex Media Server remote access and alerts when it is not reachable" \
+      org.opencontainers.image.source="https://github.com/lanceheld/plex-visibility"
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
