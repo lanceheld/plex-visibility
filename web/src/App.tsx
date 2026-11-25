@@ -1,4 +1,4 @@
-import { Activity, LockKeyhole, LogOut, Settings as SettingsIcon, TriangleAlert } from 'lucide-react';
+import { Activity, Heart, LockKeyhole, LogOut, Settings as SettingsIcon, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AuthState, LOGGED_OUT_EVENT, type PublicSettings, type StatusResponse } from './api.ts';
 import { ChangePasswordCard, LoginCard, SecurityCard } from './components/Auth.tsx';
@@ -159,6 +159,7 @@ export function App() {
 }
 
 const REPO = 'https://github.com/lanceheld/plex-visibility';
+const DONATE_URL = 'https://venmo.com/u/lanceheld';
 
 /** Version, linked to its commit (snapshots, e.g. 1.2.3-4-gabc1234) or the releases page. */
 function Footer({ version }: { version: string }) {
@@ -175,6 +176,15 @@ function Footer({ version }: { version: string }) {
         className="rounded-md bg-slate-200/70 px-1.5 py-0.5 font-mono hover:text-slate-900 dark:bg-slate-800/70 dark:hover:text-slate-100"
       >
         {version}
+      </a>
+      <span aria-hidden="true">·</span>
+      <a
+        href={DONATE_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center gap-1 hover:text-slate-900 dark:hover:text-slate-100"
+      >
+        <Heart className="size-3 text-rose-500" /> Support this project
       </a>
     </footer>
   );

@@ -4,6 +4,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=coverage)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
 [![Security issues](https://sonarcloud.io/api/project_badges/measure?project=lanceheld_plex-visibility&metric=software_quality_security_issues)](https://sonarcloud.io/summary/new_code?id=lanceheld_plex-visibility)
+[![Donate with Venmo](https://img.shields.io/badge/Venmo-donate-008CFF?logo=venmo&logoColor=white)](https://venmo.com/u/lanceheld)
 
 Watches your Plex Media Server's **Remote Access** status and alerts you when the server stops being reachable from outside your network, and again when it recovers. It's one Docker container with a web UI for setup, history, and choosing where alerts go.
 
@@ -86,6 +87,10 @@ Everything is set in the UI and saved to `/config/plex-visibility/settings.json`
 | `PLEX_URL`, `PLEX_TOKEN`, `NOTIFY_URLS`, `HEARTBEAT_URL` |           | Optional: pre-fill settings on **first** start only, for headless setups. `NOTIFY_URLS` is space-separated Apprise URLs. |
 
 **Networking:** the monitor needs to reach Plex at the address you pick, usually its LAN address (the sign-in flow lists local addresses first). If Plex runs on the same host with host networking, you can instead use `network_mode: host` and `http://localhost:32400`.
+
+## Support
+
+If Plex Visibility is useful to you, you can support its development with a donation through [Venmo](https://venmo.com/u/lanceheld). Thank you!
 
 ## Development
 
