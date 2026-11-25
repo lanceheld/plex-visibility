@@ -12,6 +12,9 @@ jobs:
   test:
     name: Lint and test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # lets the Sonar auth step exchange the job's OIDC token
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -42,15 +45,16 @@ jobs:
       - name: Run unit tests
         run: npm run test:coverage
 
+      # Exchanges the job's GitHub OIDC token for a short-lived SonarQube Cloud
+      # token and exports it as SONAR_TOKEN for the steps below. No stored secret.
+      - name: SonarQube Cloud authentication
+        uses: SonarSource/sonarqube-auth-action@v1
+
+      # qualitygate.wait makes the scan wait for the quality gate and fail the
+      # step when it fails, so no separate quality gate action is needed.
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      - name: SonarQube Quality Gate check
-        id: sonarqube-quality-gate-check
-        uses: SonarSource/sonarqube-quality-gate-action@v1
         with:
-          pollingTimeoutSec: 600
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          args: >
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=600
