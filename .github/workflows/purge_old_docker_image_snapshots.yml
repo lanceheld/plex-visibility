@@ -1,0 +1,24 @@
+name: Purge old docker image snapshots
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # run every day at midnight
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    name: Delete old snapshot images
+    steps:
+      - name: Delete old snapshot images
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
+        with:
+          account: lanceheld
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: plex-visibility
+          image-tags: '*-*-*' # target any image that has a tag with two dashes in it (indicating it is a snapshot)
+          cut-off: '2w' # delete images older than 2 weeks (1 day when testing via pull request)
+          keep-n-most-recent: 1 # keep the most recent image so there's always at least one snapshot available

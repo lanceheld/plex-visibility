@@ -1,0 +1,82 @@
+// Development container (see Dockerfile). Node comes from a feature at the
+// major version .node-version and the Dockerfile use (change them together).
+// Docker, Claude Code and the GitHub CLI come from features too; the
+// SonarQube CLI (`sonar`) is installed by the Dockerfile.
+//
+// Docker runs inside the container (docker-in-docker), not against the
+// host's daemon, so `docker build .`, `docker compose up --build` and the
+// README's `docker run -p 127.0.0.1:8000:8000 caronc/apprise` work as
+// written: bind mounts like ./config resolve to container paths, and
+// published ports are reachable on localhost here. Its images and
+// containers live in a volume, so they survive rebuilds.
+//
+// Git over SSH: VS Code forwards the host's SSH agent into the container,
+// so `git push` to git@github.com uses the key the host agent holds
+// (check with `ssh-add -l` on the host; `ssh -T git@github.com` inside).
+// VS Code also copies the host's ~/.gitconfig, so commits keep your name.
+{
+  "name": "plex-visibility",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "24" },
+    // Docker Engine, CLI, Buildx and Compose v2 inside the container
+    // (needs a privileged container, which the feature requests).
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    // Claude Code CLI (installed with npm, after the node feature).
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    // GitHub CLI. Its login is not shared with the host (on macOS the
+    // token lives in the Keychain): run `gh auth login` once inside the
+    // container; the volume below keeps it across rebuilds.
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "remoteUser": "vscode",
+  // Claude Code keeps its login, settings and history here; the volume
+  // below keeps them across container rebuilds. The host's login is not
+  // shared (on macOS it lives in the Keychain): run `claude` and log in
+  // once inside the container.
+  "containerEnv": {
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    // The SonarQube CLI keeps its login in the OS keychain, which the
+    // container doesn't have ("No usable system keychain is available").
+    // With this set it uses a file instead, on the volume below, so the
+    // login survives rebuilds. Run `sonar auth login --org lanceheld` once
+    // inside the container.
+    "SONARQUBE_CLI_KEYCHAIN_FILE": "/home/vscode/.sonar/sonarqube-cli/keychain.json"
+  },
+  "mounts": [
+    // Linux node_modules stay out of the host's (oxlint, rollup and
+    // tailwind's oxide ship per-platform binaries, so a macOS install and
+    // a Linux install would break each other), and off the slower bind
+    // mount.
+    "source=plex-visibility-node-modules,target=${containerWorkspaceFolder}/node_modules,type=volume",
+    "source=plex-visibility-docker,target=/var/lib/docker,type=volume",
+    "source=plex-visibility-claude-config,target=/home/vscode/.claude,type=volume",
+    "source=plex-visibility-gh-config,target=/home/vscode/.config/gh,type=volume",
+    // SonarQube CLI login, settings and logs.
+    "source=plex-visibility-sonar,target=/home/vscode/.sonar,type=volume"
+  ],
+  // A new volume is owned by root, as is a parent directory Docker
+  // creates for one (~/.config).
+  "postCreateCommand": "sudo chown vscode:vscode node_modules /home/vscode/.claude /home/vscode/.config /home/vscode/.config/gh /home/vscode/.sonar && chmod 700 /home/vscode/.sonar && npm ci",
+  // `npm run dev` (API and Vite), and the image from `docker compose up`.
+  "forwardPorts": [5173, 8080],
+  "portsAttributes": {
+    "5173": { "label": "Vite dev server", "onAutoForward": "notify" },
+    "8080": { "label": "API / container", "onAutoForward": "silent" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "oxc.oxc-vscode",
+        "esbenp.prettier-vscode",
+        "vitest.explorer",
+        "ms-azuretools.vscode-containers",
+        "github.vscode-github-actions",
+        "editorconfig.editorconfig",
+        "anthropic.claude-code"
+      ]
+    }
+  }
+}
