@@ -70,6 +70,9 @@ export interface AlertLogEntry {
 /** A settings backup. Includes secrets: the Plex token and full notification URLs. */
 export interface ConfigExport {
   app: 'plex-visibility';
+  /** Settings format version; see SCHEMA_VERSION in settings.ts. */
+  schemaVersion: number;
+  /** App version that made the export, for reference only. */
   version: string;
   exportedAt: string;
   settings: Omit<Settings, 'clientId'>;

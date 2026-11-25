@@ -71,26 +71,50 @@ export function toPublic(s: Settings): PublicSettings {
   return { ...rest, plex: { url: plex.url, serverName: plex.serverName, hasToken: plex.token !== '' } };
 }
 
-export function exportConfig(s: Settings, version: string, now = new Date()): ConfigExport {
-  const { clientId: _, ...settings } = structuredClone(s);
-  return { app: 'plex-visibility', version, exportedAt: now.toISOString(), settings };
+/**
+ * Version of the settings format, in settings.json and in exported backups.
+ * Bump it only when a change can't be handled by defaults alone (a field is
+ * renamed, removed, or changes meaning), and add a migration below.
+ * Adding a new field with a default doesn't need a bump.
+ */
+export const SCHEMA_VERSION = 1;
+
+type RawSettings = Record<string, unknown>;
+
+/** MIGRATIONS[n] turns version-n settings into version n+1. */
+export type Migrations = Record<number, (s: RawSettings) => RawSettings>;
+const MIGRATIONS: Migrations = {};
+
+export class SettingsVersionError extends Error {}
+
+/** Bring raw settings from `from` up to `to`, refusing anything newer than this server understands. */
+export function migrate(raw: RawSettings, from: number, migrations: Migrations = MIGRATIONS, to = SCHEMA_VERSION) {
+  if (!Number.isInteger(from) || from < 1) {
+    throw new SettingsVersionError(`Unknown settings format version: ${String(from)}`);
+  }
+  if (from > to) {
+    throw new SettingsVersionError(
+      `These settings are from a newer version of Plex Visibility (format ${from}; this server understands up to ${to}). Update Plex Visibility first.`,
+    );
+  }
+  let result = raw;
+  for (let v = from; v < to; v++) {
+    const step = migrations[v];
+    if (!step) {
+      throw new SettingsVersionError(`No migration from settings format ${v} to ${v + 1}`);
+    }
+    result = step(result);
+  }
+  return result;
 }
 
-const importSchema = z.object({
-  app: z.literal('plex-visibility', { error: 'Not a Plex Visibility configuration file' }),
-  settings: z.record(z.string(), z.unknown()),
-});
-
 /**
- * Turn an uploaded export into complete settings. Missing fields get defaults
- * (so older exports still load), destinations without an id get one, and this
- * install keeps its own plex.tv client ID.
+ * Complete, validated settings from current-format raw data. Missing fields get
+ * defaults, destinations without an id get one, and unknown fields are dropped.
  */
-export function parseImport(raw: unknown, current: Settings): Settings {
-  const { settings: imported } = importSchema.parse(raw);
-  const r = imported as Partial<Settings>;
+function fromRaw(r: Partial<Settings>, clientId?: string): Settings {
   const d = defaultSettings();
-  // Untrusted file contents: fill in what's missing; settingsSchema validates the rest.
+  // Possibly untrusted contents: fill in what's missing; settingsSchema validates the rest.
   const rawTargets: unknown = r.notifications?.targets;
   const targets = Array.isArray(rawTargets)
     ? rawTargets.map((t: Record<string, unknown>) => ({ enabled: true, label: '', ...t, id: t?.id || randomUUID() }))
@@ -98,11 +122,33 @@ export function parseImport(raw: unknown, current: Settings): Settings {
   return settingsSchema.parse({
     ...d,
     ...r,
-    clientId: current.clientId,
+    clientId: clientId ?? r.clientId ?? d.clientId,
     plex: { ...d.plex, ...r.plex },
     monitor: { ...d.monitor, ...r.monitor },
     notifications: { ...d.notifications, ...r.notifications, targets },
   });
+}
+
+export function exportConfig(s: Settings, version: string, now = new Date()): ConfigExport {
+  const { clientId: _, ...settings } = structuredClone(s);
+  return { app: 'plex-visibility', schemaVersion: SCHEMA_VERSION, version, exportedAt: now.toISOString(), settings };
+}
+
+const importSchema = z.object({
+  app: z.literal('plex-visibility', { error: 'Not a Plex Visibility configuration file' }),
+  // Exports made before schemaVersion existed are format 1.
+  schemaVersion: z.unknown().optional(),
+  settings: z.record(z.string(), z.unknown()),
+});
+
+/**
+ * Turn an uploaded export into complete settings: migrate it from its format
+ * version, fill in defaults, and keep this install's own plex.tv client ID.
+ */
+export function parseImport(raw: unknown, current: Settings, migrations: Migrations = MIGRATIONS): Settings {
+  const file = importSchema.parse(raw);
+  const from = file.schemaVersion === undefined ? 1 : Number(file.schemaVersion);
+  return fromRaw(migrate(file.settings, from, migrations) as Partial<Settings>, current.clientId);
 }
 
 export function applyUpdate(current: Settings, update: SettingsUpdate): Settings {
@@ -127,21 +173,20 @@ export class SettingsStore {
   }
 
   async load(env: NodeJS.ProcessEnv = process.env): Promise<Settings> {
-    const raw = await readJson(this.file);
+    const raw = (await readJson(this.file)) as RawSettings | undefined;
     if (raw === undefined) {
       this.current = settingsSchema.parse(seedFromEnv(env, defaultSettings()));
-      await writeJson(this.file, this.current);
-    } else {
-      // Fill in fields added in newer versions.
-      const d = defaultSettings();
-      const r = raw as Partial<Settings>;
-      this.current = settingsSchema.parse({
-        ...d,
-        ...r,
-        plex: { ...d.plex, ...r.plex },
-        monitor: { ...d.monitor, ...r.monitor },
-        notifications: { ...d.notifications, ...r.notifications },
-      });
+      await this.save();
+      return this.current;
+    }
+    // Files written before schemaVersion existed are format 1. A newer format
+    // (after a downgrade) throws rather than being overwritten and losing data.
+    const { schemaVersion = 1, ...stored } = raw;
+    const from = Number(schemaVersion);
+    this.current = fromRaw(migrate(stored, from) as Partial<Settings>);
+    // Rewrite if it was migrated or predates schemaVersion.
+    if (raw.schemaVersion !== SCHEMA_VERSION) {
+      await this.save();
     }
     return this.current;
   }
@@ -152,7 +197,7 @@ export class SettingsStore {
 
   async update(update: SettingsUpdate): Promise<Settings> {
     this.current = applyUpdate(this.current, update);
-    await writeJson(this.file, this.current);
+    await this.save();
     for (const fn of this.listeners) {
       fn(this.current);
     }
@@ -162,11 +207,15 @@ export class SettingsStore {
   /** Replace everything, e.g. from an imported backup. */
   async replace(next: Settings): Promise<Settings> {
     this.current = settingsSchema.parse(next);
-    await writeJson(this.file, this.current);
+    await this.save();
     for (const fn of this.listeners) {
       fn(this.current);
     }
     return this.current;
+  }
+
+  private save(): Promise<void> {
+    return writeJson(this.file, { schemaVersion: SCHEMA_VERSION, ...this.current });
   }
 
   onChange(fn: (s: Settings) => void): void {

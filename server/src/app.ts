@@ -9,7 +9,14 @@ import type { AppriseClient } from './notify.ts';
 import { fetchStatus } from './plex.ts';
 import type { PlexAuth } from './plexAuth.ts';
 import type { MonitorService } from './service.ts';
-import { exportConfig, parseImport, type SettingsStore, settingsSchema, toPublic } from './settings.ts';
+import {
+  exportConfig,
+  parseImport,
+  SettingsVersionError,
+  type SettingsStore,
+  settingsSchema,
+  toPublic,
+} from './settings.ts';
 import { APP_VERSION } from './version.ts';
 import type { NotifyTarget, PublicSettings, Settings } from './types.ts';
 
@@ -91,6 +98,9 @@ export function createApp(deps: AppDeps): Hono {
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status);
+    }
+    if (err instanceof SettingsVersionError) {
+      return c.json({ error: err.message }, 400);
     }
     if (err instanceof z.ZodError) {
       return c.json({ error: err.issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ') }, 400);

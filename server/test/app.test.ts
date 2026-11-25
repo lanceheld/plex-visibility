@@ -317,6 +317,19 @@ describe('config backup', () => {
     expect(s.notifications.targets[0]?.id).toBeTruthy();
   });
 
+  it('rejects a backup from a newer format with a clear message, leaving settings alone', async () => {
+    const ctx = await setup({ PLEX_TOKEN: 'keep' });
+    const config = await exportConfig(ctx);
+    const res = await ctx.json('POST', '/api/config/import', {
+      ...config,
+      schemaVersion: config.schemaVersion + 1,
+      settings: { ...config.settings, plex: { ...config.settings.plex, token: 'replaced' } },
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain('newer version of Plex Visibility');
+    expect(ctx.settings.get().plex.token).toBe('keep');
+  });
+
   it('rejects files that are not a valid configuration, leaving settings alone', async () => {
     const ctx = await setup({ PLEX_TOKEN: 'keep' });
     const notOurs = await ctx.json('POST', '/api/config/import', { settings: {} });
